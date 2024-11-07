@@ -1,0 +1,31 @@
+Run the files using make; ./directoryServer2 &; ./chatServer2 [topic: string] [port: unsigned short] &; ./chatClient2
+
+
+// REVIEW THIS README, ensure everything is still accurate
+// For example, the chat servers may not be run with command line args
+
+A server registers with the directory by connecting and sending its topic name and port number.  Topic 
+names are limited to 18 characters (5 servers * 18 chars + ", " * (5-1) servers = 98 chars, 99 with 
+terminator).  Additionally, topic names cannot include ',' or ';' because of how they are used in 
+messages; this requirement is enforced in code.  The server will warn (without stopping) if the topic 
+name is too long, but it won't warn about the port number being too large or negative because the 
+server really doesn't need to bother with knowing its exact port, and the conversion into an unsigned 
+short happens either way; in the end, the port can be different than the command line arg, but 
+everything still works.
+
+A client connects to the directory and requests the list of server names.  It prints the server names for 
+the user, who inputs a name that gets sent back to the directory.  The directory then sends that server's 
+connection info (or closes the socket if the name is invalid), and the client then connects to the server.
+
+
+From Assignment 4:
+I set the max number of servers to 5 because I believe this was the stated number of servers we should be 
+able to support at a time, and I figured it was a reasonable number.
+
+
+From Assignment 3:
+Max username is 10 chars, max msg length is 87 chars (100 - username - 2 chars for ": " - '\0' terminator).
+As currently implemented, I'd imagine the server has the possibility of not sending out user messages if it 
+receives one message, then a new message before the other had been sent out completely.  I was not able to 
+make this happen in testing, and I'd imagine fixing that would be a little beyond the scope of this project, 
+so I decided to ignore this problem.
