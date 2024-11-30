@@ -1,6 +1,5 @@
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
 #include <strings.h>
 #include <sys/types.h>
 #include <stdlib.h>
@@ -8,33 +7,30 @@
 #include <sys/queue.h>
 #include "inet.h"
 #include "common.h"
+#include <string.h>
 
-// Prevents an unnecessary warning
-size_t strnlen(const char *s, size_t maxlen);
-
-struct svr_entry {
+typedef struct server_entry {
 	int fd;
 	char topic[MAXTOPICLEN];
 	unsigned short port;
 	unsigned long ip_addr;
-	LIST_ENTRY(svr_entry) svr_entries;
-};
+	LIST_ENTRY(server_entry) servers;
+} server_t;
 
-struct cli_entry {
+typedef struct client_entry {
 	int fd;
 	char message[MAX];
-	LIST_ENTRY(cli_entry) cli_entries;
-};
+	LIST_ENTRY(client_entry) clients;
+} client_t;
 
-// To be used for all new connections which have not been identified yet
-struct uncat_entry {
+typedef struct uncat_entry {
 	int fd;
 	unsigned long ip_addr;
 	LIST_ENTRY(uncat_entry) uncat_entries;
-};
+} unknown_t;
 
-LIST_HEAD(svr_listhead, svr_entry);
-LIST_HEAD(cli_listhead, cli_entry);
+LIST_HEAD(svr_listhead, server_entry);
+LIST_HEAD(cli_listhead, client_entry);
 LIST_HEAD(uncat_listhead, uncat_entry);
 
 void sighandler(int);
@@ -47,12 +43,14 @@ int main(int argc, char **argv)
 	struct sockaddr_in cli_addr, serv_addr;
 	char				s[MAX], outmsg[MAX], tempmsg[MAX], topic[MAXTOPICLEN];
 	fd_set readset, writeset;
+
 	struct svr_listhead svr_list;
 	struct cli_listhead cli_list;
 	struct uncat_listhead uncat_list;
 
-	struct svr_entry *svr_currentry, *svr_e2;
-	struct cli_entry *cli_currentry, *cli_e2;
+	server_t *svr_currentry, *svr_e2;
+	client_t *cli_currentry, *cli_e2;
+
 	struct uncat_entry *uncat_currentry, *uncat_e2;
 	int numServers = 0;
 
@@ -102,20 +100,20 @@ int main(int argc, char **argv)
 			if (uncat_currentry->fd > maxsockfd) maxsockfd = uncat_currentry->fd;
 		}
 		// Checking all servers to see if they have disconnected
-		LIST_FOREACH(svr_currentry, &svr_list, svr_entries) {
+		LIST_FOREACH(svr_currentry, &svr_list, servers) {
 			FD_SET(svr_currentry->fd, &readset);
 			if (svr_currentry->fd > maxsockfd) maxsockfd = svr_currentry->fd;
 		}
 		// Checking listening socket
 		FD_SET(sockfd, &readset);
 		// Checking all clients for messages
-		LIST_FOREACH(cli_currentry, &cli_list, cli_entries) {
+		LIST_FOREACH(cli_currentry, &cli_list, clients) {
 			FD_SET(cli_currentry->fd, &readset);
 			if (cli_currentry->fd > maxsockfd) maxsockfd = cli_currentry->fd;
 		}
 
 		// Write to all clients who have a message waiting
-		LIST_FOREACH(cli_currentry, &cli_list, cli_entries) {
+		LIST_FOREACH(cli_currentry, &cli_list, clients) {
 			if (strncmp(cli_currentry->message, "\0", MAX) != 0) {
 				FD_SET(cli_currentry->fd, &writeset);
 				if (cli_currentry->fd > maxsockfd) maxsockfd = cli_currentry->fd;
@@ -144,14 +142,14 @@ int main(int argc, char **argv)
 			// for fd in svr_list:
 			svr_currentry = LIST_FIRST(&svr_list);
 			while (svr_currentry != NULL) {
-				svr_e2 = LIST_NEXT(svr_currentry, svr_entries);
+				svr_e2 = LIST_NEXT(svr_currentry, servers);
 				if (FD_ISSET(svr_currentry->fd, &readset)) {
 					// Check if the server connection has closed
 					if (read(svr_currentry->fd, s, MAX) <= 0) {
 						// Handle server disconnect/shutdown
 						numServers--;
 						close(svr_currentry->fd);
-						LIST_REMOVE(svr_currentry, svr_entries);
+						LIST_REMOVE(svr_currentry, servers);
 						free(svr_currentry);
 					}
 				}
@@ -161,13 +159,13 @@ int main(int argc, char **argv)
 			// for fd in cli_list:
 			cli_currentry = LIST_FIRST(&cli_list);
 			while (cli_currentry != NULL) {
-				cli_e2 = LIST_NEXT(cli_currentry, cli_entries);
+				cli_e2 = LIST_NEXT(cli_currentry, clients);
 				// If client sent a message
 				if (FD_ISSET(cli_currentry->fd, &readset)) {
 					// Read, determine type (if not starting with "cr" or asking for nonexistent server or read=0, close)
 					if (read(cli_currentry->fd, s, MAX) <= 0) {
 						close(cli_currentry->fd);
-						LIST_REMOVE(cli_currentry, cli_entries);
+						LIST_REMOVE(cli_currentry, clients);
 						free(cli_currentry);
 					}
 					else if (strncmp(s, "cr", 2) == 0) {
@@ -179,7 +177,7 @@ int main(int argc, char **argv)
 						}
 						svr_currentry = LIST_FIRST(&svr_list);
 						while (svr_currentry != NULL) {
-							svr_e2 = LIST_NEXT(svr_currentry, svr_entries);
+							svr_e2 = LIST_NEXT(svr_currentry, servers);
 							if (strncmp(topic, svr_currentry->topic, MAXTOPICLEN-1) == 0) {
 								snprintf(cli_currentry->message, MAX, "%lu;%hu", svr_currentry->ip_addr, svr_currentry->port);
 								svr_e2 = NULL;
@@ -190,14 +188,14 @@ int main(int argc, char **argv)
 						// Or, if the given topic doesn't exist, close the connection without writing
 						if (strncmp(cli_currentry->message, "\0", MAX) == 0) {
 							close(cli_currentry->fd);
-							LIST_REMOVE(cli_currentry, cli_entries);
+							LIST_REMOVE(cli_currentry, clients);
 							free(cli_currentry);
 						}
 					}
 					else {
 						// Unexpected client message (really shouldn't be possible)
 						close(cli_currentry->fd);
-						LIST_REMOVE(cli_currentry, cli_entries);
+						LIST_REMOVE(cli_currentry, clients);
 						free(cli_currentry);
 					}
 				}
@@ -225,7 +223,7 @@ int main(int argc, char **argv)
 					// Determine type
 					// A client's first message will always be "cl"
 					if (strncmp(s, "cl", 2) == 0) {
-						struct cli_entry *newentry = malloc(sizeof(struct cli_entry));
+						client_t *newentry = malloc(sizeof(client_t));
 						newentry->fd = uncat_currentry->fd;
 
 						memset(outmsg, '\0', MAX);
@@ -233,7 +231,7 @@ int main(int argc, char **argv)
 						i = 1;
 						svr_currentry = LIST_FIRST(&svr_list);
 						while (svr_currentry != NULL) {
-							svr_e2 = LIST_NEXT(svr_currentry, svr_entries);
+							svr_e2 = LIST_NEXT(svr_currentry, servers);
 							// Checks if outmsg has enough space
 							if ((strnlen(outmsg, MAX) + MAXTOPICLEN + 2 <= MAX) || 
 							    (i == 5 && strnlen(outmsg, MAX) + MAXTOPICLEN <= MAX)) {
@@ -246,7 +244,7 @@ int main(int argc, char **argv)
 							i++;
 						}
 						snprintf(newentry->message, MAX, "%s", outmsg);
-						LIST_INSERT_HEAD(&cli_list, newentry, cli_entries);
+						LIST_INSERT_HEAD(&cli_list, newentry, clients);
 						LIST_REMOVE(uncat_currentry, uncat_entries);
 						free(uncat_currentry);
 					}
@@ -259,7 +257,7 @@ int main(int argc, char **argv)
 							exit(1);
 						}
 						repeat_name = 0;
-						LIST_FOREACH(svr_e2, &svr_list, svr_entries) {
+						LIST_FOREACH(svr_e2, &svr_list, servers) {
 							if (strncmp(topic, svr_e2->topic, MAXTOPICLEN-1) == 0) {
 								repeat_name = 1;
 							}
@@ -272,14 +270,15 @@ int main(int argc, char **argv)
 							free(uncat_currentry);
 						}
 						else {
-							struct svr_entry *newentry = malloc(sizeof(struct svr_entry));
+							server_t *newentry = malloc(sizeof(server_t));
+
 							newentry->fd = uncat_currentry->fd;
 							snprintf(newentry->topic, MAX, "%s", topic);
 							newentry->port = port;
 							newentry->ip_addr = uncat_currentry->ip_addr;
 							numServers++;
 
-							LIST_INSERT_HEAD(&svr_list, newentry, svr_entries);
+							LIST_INSERT_HEAD(&svr_list, newentry, servers);
 							LIST_REMOVE(uncat_currentry, uncat_entries);
 							free(uncat_currentry);
 						}
