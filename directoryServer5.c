@@ -1,32 +1,33 @@
-#include <signal.h>
-#include <stdio.h>
-#include <strings.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/queue.h>
-#include "inet.h"
 #include "common.h"
+#include "inet.h"
+#include <signal.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/queue.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 typedef struct server_entry {
-	int fd;
-	char topic[MAXTOPICLEN];
-	unsigned short port;
-	unsigned long ip_addr;
-	LIST_ENTRY(server_entry) servers;
+  int fd;
+  char topic[MAXTOPICLEN];
+  unsigned short port;
+  unsigned long ip_addr;
+  LIST_ENTRY(server_entry) servers;
 } server_t;
 
 typedef struct client_entry {
-	int fd;
-	char message[MAX];
-	LIST_ENTRY(client_entry) clients;
+  int fd;
+  char tx_buffer[MAX];
+  LIST_ENTRY(client_entry) clients;
 } client_t;
 
 typedef struct uncat_entry {
-	int fd;
-	unsigned long ip_addr;
-	LIST_ENTRY(uncat_entry) uncat_entries;
+  int fd;
+  unsigned long ip_addr;
+  LIST_ENTRY(uncat_entry) unknowns;
 } unknown_t;
 
 LIST_HEAD(svr_listhead, server_entry);
@@ -35,262 +36,291 @@ LIST_HEAD(uncat_listhead, uncat_entry);
 
 void sighandler(int);
 
-int main(int argc, char **argv)
-{
-	int				sockfd, newsockfd, maxsockfd, i, repeat_name;
-	unsigned int	clilen;
-	unsigned short port = 0;
-	struct sockaddr_in cli_addr, serv_addr;
-	char				s[MAX], outmsg[MAX], tempmsg[MAX], topic[MAXTOPICLEN];
-	fd_set readset, writeset;
+int main(int argc, char **argv) {
+  int repeat_name;
+  char recv_str[MAX], outmsg[MAX], tempmsg[MAX], topic[MAXTOPICLEN];
 
-	struct svr_listhead svr_list;
-	struct cli_listhead cli_list;
-	struct uncat_listhead uncat_list;
+  server_t *server_current_entry;
+  client_t *client_current_entry, *client_next;
 
-	server_t *svr_currentry, *svr_e2;
-	client_t *cli_currentry, *cli_e2;
+  struct uncat_entry *unknown_current_entry, *unknown_next;
+  int n_servers = 0;
 
-	struct uncat_entry *uncat_currentry, *uncat_e2;
-	int numServers = 0;
+  struct svr_listhead server_ll;
+  struct cli_listhead client_ll;
+  struct uncat_listhead unknown_ll;
 
-	LIST_INIT(&svr_list);
-	LIST_INIT(&cli_list);
-	LIST_INIT(&uncat_list);
+  LIST_INIT(&server_ll);
+  LIST_INIT(&client_ll);
+  LIST_INIT(&unknown_ll);
 
-	signal(SIGINT, sighandler);
+  signal(SIGINT, sighandler);
 
-	/* Create communication endpoint */
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		perror("directory: can't open stream socket");
-		exit(1);
-	}
+  /* Create communication endpoint */
+  int server_fd;
+  if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("directory: can't open stream socket");
+    exit(1);
+  }
 
-	/* Add SO_REAUSEADDR option to prevent address in use errors (modified from: "Hands-On Network
-	* Programming with C" Van Winkle, 2019. https://learning.oreilly.com/library/view/hands-on-network-programming/9781789349863/5130fe1b-5c8c-42c0-8656-4990bb7baf2e.xhtml */
-	int true = 1;
-	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (void *)&true, sizeof(true)) < 0) {
-		perror("directory: can't set stream socket address reuse option");
-		exit(1);
-	}
+  int true = 1;
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &true, sizeof(true)) < 0) {
+    perror("directory: can't set stream socket address reuse option");
+    exit(1);
+  }
 
-	/* Bind socket to local address */
-	memset((char *) &serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_addr.s_addr = inet_addr(DIR_HOST_ADDR);
-	serv_addr.sin_port		= htons(DIR_TCP_PORT);
+  struct sockaddr_in socket_info = {0};
 
-	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-		perror("directory: can't bind local address");
-		exit(1);
-	}
+  socket_info.sin_family = AF_INET;
+  socket_info.sin_addr.s_addr = inet_addr(DIR_HOST_ADDR);
+  socket_info.sin_port = htons(DIR_TCP_PORT);
 
-	listen(sockfd, 5);
-	maxsockfd = sockfd;
+  if (bind(server_fd, (struct sockaddr *)&socket_info, sizeof(socket_info)) < 0) {
+    perror("directory: can't bind local address");
+    exit(1);
+  }
 
-	for (;;) {
+  if (listen(server_fd, MAX_SERVERS) < 0) {
+    perror("directory: can't listen on socket");
+    exit(1);
+  }
 
-		FD_ZERO(&readset);
-		FD_ZERO(&writeset);
-		maxsockfd = sockfd;
+  fd_set readset, writeset;
 
-		// Listening to all uncategorized connections
-		LIST_FOREACH(uncat_currentry, &uncat_list, uncat_entries) {
-			FD_SET(uncat_currentry->fd, &readset);
-			if (uncat_currentry->fd > maxsockfd) maxsockfd = uncat_currentry->fd;
-		}
-		// Checking all servers to see if they have disconnected
-		LIST_FOREACH(svr_currentry, &svr_list, servers) {
-			FD_SET(svr_currentry->fd, &readset);
-			if (svr_currentry->fd > maxsockfd) maxsockfd = svr_currentry->fd;
-		}
-		// Checking listening socket
-		FD_SET(sockfd, &readset);
-		// Checking all clients for messages
-		LIST_FOREACH(cli_currentry, &cli_list, clients) {
-			FD_SET(cli_currentry->fd, &readset);
-			if (cli_currentry->fd > maxsockfd) maxsockfd = cli_currentry->fd;
-		}
+  for (;;) {
+    FD_ZERO(&readset);
+    FD_ZERO(&writeset);
 
-		// Write to all clients who have a message waiting
-		LIST_FOREACH(cli_currentry, &cli_list, clients) {
-			if (strncmp(cli_currentry->message, "\0", MAX) != 0) {
-				FD_SET(cli_currentry->fd, &writeset);
-				if (cli_currentry->fd > maxsockfd) maxsockfd = cli_currentry->fd;
-			}
-		}
+    int maxsockfd = server_fd;
 
-		// select call here
-		if ((i = select((maxsockfd + 1), &readset, &writeset, NULL, NULL)) > 0) {
+    // Checking listening socket
+    FD_SET(server_fd, &readset);
 
-			// Accept a new connection request
-			if (FD_ISSET(sockfd, &readset)) {
-				clilen = sizeof(cli_addr);
-				newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-				if (newsockfd < 0) {
-					perror("server: accept error");
-					exit(1);
-				} else {
-					// When accepting, add entry to uncat_list
-					struct uncat_entry *newentry = malloc(sizeof(struct uncat_entry));
-					newentry->fd = newsockfd;
-					newentry->ip_addr = cli_addr.sin_addr.s_addr;
-					LIST_INSERT_HEAD(&uncat_list, newentry, uncat_entries);
-				}
-			}
+    // Listening to all uncategorized connections
+    LIST_FOREACH(unknown_current_entry, &unknown_ll, unknowns) {
+      FD_SET(unknown_current_entry->fd, &readset);
+      if (unknown_current_entry->fd > maxsockfd)
+        maxsockfd = unknown_current_entry->fd;
+    }
 
-			// for fd in svr_list:
-			svr_currentry = LIST_FIRST(&svr_list);
-			while (svr_currentry != NULL) {
-				svr_e2 = LIST_NEXT(svr_currentry, servers);
-				if (FD_ISSET(svr_currentry->fd, &readset)) {
-					// Check if the server connection has closed
-					if (read(svr_currentry->fd, s, MAX) <= 0) {
-						// Handle server disconnect/shutdown
-						numServers--;
-						close(svr_currentry->fd);
-						LIST_REMOVE(svr_currentry, servers);
-						free(svr_currentry);
-					}
-				}
-				svr_currentry = svr_e2;
-			}
+    // Checking all servers to see if they have disconnected
+    LIST_FOREACH(server_current_entry, &server_ll, servers) {
+      FD_SET(server_current_entry->fd, &readset);
+      if (server_current_entry->fd > maxsockfd)
+        maxsockfd = server_current_entry->fd;
+    }
 
-			// for fd in cli_list:
-			cli_currentry = LIST_FIRST(&cli_list);
-			while (cli_currentry != NULL) {
-				cli_e2 = LIST_NEXT(cli_currentry, clients);
-				// If client sent a message
-				if (FD_ISSET(cli_currentry->fd, &readset)) {
-					// Read, determine type (if not starting with "cr" or asking for nonexistent server or read=0, close)
-					if (read(cli_currentry->fd, s, MAX) <= 0) {
-						close(cli_currentry->fd);
-						LIST_REMOVE(cli_currentry, clients);
-						free(cli_currentry);
-					}
-					else if (strncmp(s, "cr", 2) == 0) {
-						// This should always parse correctly, since it should be formatted correctly
-						// on the client's end
-						if (sscanf(s, "cr%[^\n]", topic) != 1) {
-							printf("Failed to parse server info\n");
-							exit(1);
-						}
-						svr_currentry = LIST_FIRST(&svr_list);
-						while (svr_currentry != NULL) {
-							svr_e2 = LIST_NEXT(svr_currentry, servers);
-							if (strncmp(topic, svr_currentry->topic, MAXTOPICLEN-1) == 0) {
-								snprintf(cli_currentry->message, MAX, "%lu;%hu", svr_currentry->ip_addr, svr_currentry->port);
-								svr_e2 = NULL;
-							}
-							svr_currentry = svr_e2;
-						}
-						// Setting the message field will add the client to the write set next time around
-						// Or, if the given topic doesn't exist, close the connection without writing
-						if (strncmp(cli_currentry->message, "\0", MAX) == 0) {
-							close(cli_currentry->fd);
-							LIST_REMOVE(cli_currentry, clients);
-							free(cli_currentry);
-						}
-					}
-					else {
-						// Unexpected client message (really shouldn't be possible)
-						close(cli_currentry->fd);
-						LIST_REMOVE(cli_currentry, clients);
-						free(cli_currentry);
-					}
-				}
-				// If client is ready to be sent a message
-				else if (FD_ISSET(cli_currentry->fd, &writeset)) {
-					write(cli_currentry->fd, cli_currentry->message, MAX);
-					// Prevents the socket from being added to the writeset in the next iteration
-					memset(cli_currentry->message, '\0', MAX);
-				}
-				cli_currentry = cli_e2;
-			}
+    // Checking all clients for messages
+    LIST_FOREACH(client_current_entry, &client_ll, clients) {
+      FD_SET(client_current_entry->fd, &readset);
+      if (client_current_entry->fd > maxsockfd)
+        maxsockfd = client_current_entry->fd;
+    }
 
-			// for fd in uncat_list:
-			uncat_currentry = LIST_FIRST(&uncat_list);
-			while (uncat_currentry != NULL) {
-				uncat_e2 = LIST_NEXT(uncat_currentry, uncat_entries);
-				if (FD_ISSET(uncat_currentry->fd, &readset)) {
-					// Socket closed or invalid first message (first messages should always be at least 2 chars long)
-					if (read(uncat_currentry->fd, s, MAX) <= 0 || strnlen(s, MAX) < 2) {
-						// Close and forget socket
-						close(uncat_currentry->fd);
-						LIST_REMOVE(uncat_currentry, uncat_entries);
-						free(uncat_currentry);
-					}
-					// Determine type
-					// A client's first message will always be "cl"
-					if (strncmp(s, "cl", 2) == 0) {
-						client_t *newentry = malloc(sizeof(client_t));
-						newentry->fd = uncat_currentry->fd;
+    // Write to all clients who have a message waiting
+    LIST_FOREACH(client_current_entry, &client_ll, clients) {
+      if (strncmp(client_current_entry->tx_buffer, "\0", MAX) == 0) {
+        continue;
+      }
 
-						memset(outmsg, '\0', MAX);
-						memset(tempmsg, '\0', MAX);
-						i = 1;
-						svr_currentry = LIST_FIRST(&svr_list);
-						while (svr_currentry != NULL) {
-							svr_e2 = LIST_NEXT(svr_currentry, servers);
-							// Checks if outmsg has enough space
-							if ((strnlen(outmsg, MAX) + MAXTOPICLEN + 2 <= MAX) || 
-							    (i == 5 && strnlen(outmsg, MAX) + MAXTOPICLEN <= MAX)) {
-								//strncat(outmsg, svr_currentry->topic, MAXTOPICLEN);
-								snprintf(tempmsg, strnlen(outmsg, MAX) + MAXTOPICLEN, "%s%s", outmsg, svr_currentry->topic);
-								snprintf(outmsg, strnlen(outmsg, MAX) + MAXTOPICLEN, "%s", tempmsg);
-								if (i != numServers) strncat(outmsg, ", ", 3);
-							}
-							svr_currentry = svr_e2;
-							i++;
-						}
-						snprintf(newentry->message, MAX, "%s", outmsg);
-						LIST_INSERT_HEAD(&cli_list, newentry, clients);
-						LIST_REMOVE(uncat_currentry, uncat_entries);
-						free(uncat_currentry);
-					}
-					// A server's first (and only) message will always start with 's'
-					else if (strncmp(s, "s", 1) == 0) {
-						// This should always parse correctly, since it should be formatted correctly
-						// on the server's end
-						if (sscanf(s, "s%[^;]; %hu", topic, &port) != 2) {
-							printf("Failed to parse server info\n");
-							exit(1);
-						}
-						repeat_name = 0;
-						LIST_FOREACH(svr_e2, &svr_list, servers) {
-							if (strncmp(topic, svr_e2->topic, MAXTOPICLEN-1) == 0) {
-								repeat_name = 1;
-							}
-						}
+      FD_SET(client_current_entry->fd, &writeset);
+      if (client_current_entry->fd > maxsockfd)
+        maxsockfd = client_current_entry->fd;
+    }
 
-						if (repeat_name || numServers >= 5) {
-							// Close the socket; the server will know to shut down
-							close(uncat_currentry->fd);
-							LIST_REMOVE(uncat_currentry, uncat_entries);
-							free(uncat_currentry);
-						}
-						else {
-							server_t *newentry = malloc(sizeof(server_t));
+    int select_count;
+    if ((select_count =
+             select((maxsockfd + 1), &readset, &writeset, NULL, NULL)) <= 0) {
+      perror("directory: Failed to select");
+      exit(1);
+    }
 
-							newentry->fd = uncat_currentry->fd;
-							snprintf(newentry->topic, MAX, "%s", topic);
-							newentry->port = port;
-							newentry->ip_addr = uncat_currentry->ip_addr;
-							numServers++;
+    // Accept a new connection request
+    if (FD_ISSET(server_fd, &readset)) {
+      struct sockaddr_in client_info;
 
-							LIST_INSERT_HEAD(&svr_list, newentry, servers);
-							LIST_REMOVE(uncat_currentry, uncat_entries);
-							free(uncat_currentry);
-						}
-					}
-				}
-				uncat_currentry = uncat_e2;
-			}
-		}
-	}
+      socklen_t client_info_len = sizeof(client_info);
+      int client_fd =
+          accept(server_fd, (struct sockaddr *)&client_info, &client_info_len);
+
+      if (client_fd < 0) {
+        perror("server: failed to accept on socket");
+        exit(1);
+      } else {
+        unknown_t *newentry = calloc(1, sizeof(struct uncat_entry));
+
+        newentry->fd = client_fd;
+        newentry->ip_addr = client_info.sin_addr.s_addr;
+
+        LIST_INSERT_HEAD(&unknown_ll, newentry, unknowns);
+      }
+    }
+
+    server_current_entry = LIST_FIRST(&server_ll);
+    while (server_current_entry != NULL) {
+      server_t* next_server_entry = LIST_NEXT(server_current_entry, servers);
+
+      if (!FD_ISSET(server_current_entry->fd, &readset)) {
+        // Check if the server connection has closed
+        if (read(server_current_entry->fd, recv_str, MAX) <= 0) {
+          // Handle server disconnect/shutdown
+          n_servers--;
+          close(server_current_entry->fd);
+          LIST_REMOVE(server_current_entry, servers);
+          free(server_current_entry);
+        }
+      }
+
+      server_current_entry = next_server_entry;
+    }
+
+    client_current_entry = LIST_FIRST(&client_ll);
+    while (client_current_entry != NULL) {
+      client_next = LIST_NEXT(client_current_entry, clients);
+
+      // If client sent a message
+      if (FD_ISSET(client_current_entry->fd, &readset)) {
+        // Read, determine type (if not starting with "cr" or asking for
+        // nonexistent server or read=0, close)
+        if (read(client_current_entry->fd, recv_str, MAX) <= 0) {
+          close(client_current_entry->fd);
+          LIST_REMOVE(client_current_entry, clients);
+          free(client_current_entry);
+        } else if (strncmp(recv_str, "cr", 2) == 0) {
+          // This should always parse correctly, since it should be formatted
+          // correctly on the client's end
+          if (sscanf(recv_str, "cr%[^\n]", topic) != 1) {
+            printf("Failed to parse server info\n");
+            exit(1);
+          }
+          server_current_entry = LIST_FIRST(&server_ll);
+          while (server_current_entry != NULL) {
+            server_t* next_server_entry = LIST_NEXT(server_current_entry, servers);
+            if (strncmp(topic, server_current_entry->topic, MAXTOPICLEN - 1) ==
+                0) {
+              snprintf(client_current_entry->tx_buffer, MAX, "%lu;%hu",
+                       server_current_entry->ip_addr,
+                       server_current_entry->port);
+              next_server_entry = NULL;
+            }
+            server_current_entry = next_server_entry;
+          }
+          // Setting the message field will add the client to the write set next
+          // time around Or, if the given topic doesn't exist, close the
+          // connection without writing
+          if (strncmp(client_current_entry->tx_buffer, "\0", MAX) == 0) {
+            close(client_current_entry->fd);
+            LIST_REMOVE(client_current_entry, clients);
+            free(client_current_entry);
+          }
+        } else {
+          // Unexpected client message (really shouldn't be possible)
+          close(client_current_entry->fd);
+          LIST_REMOVE(client_current_entry, clients);
+          free(client_current_entry);
+        }
+      }
+      // If client is ready to be sent a message
+      else if (FD_ISSET(client_current_entry->fd, &writeset)) {
+        write(client_current_entry->fd, client_current_entry->tx_buffer, MAX);
+        memset(client_current_entry->tx_buffer, 0, MAX);
+      }
+      client_current_entry = client_next;
+    }
+
+    // for fd in uncat_list:
+    unknown_current_entry = LIST_FIRST(&unknown_ll);
+    while (unknown_current_entry != NULL) {
+      unknown_next = LIST_NEXT(unknown_current_entry, unknowns);
+      if (FD_ISSET(unknown_current_entry->fd, &readset)) {
+        // Socket closed or invalid first message (first messages should always
+        // be at least 2 chars long)
+        if (read(unknown_current_entry->fd, recv_str, MAX) <= 0 || strnlen(recv_str, MAX) < 2) {
+          close(unknown_current_entry->fd);
+
+          LIST_REMOVE(unknown_current_entry, unknowns);
+          free(unknown_current_entry);
+        }
+
+        // Determine type
+        // A client's first message will always be "cl"
+        if (strncmp(recv_str, "cl", 2) == 0) {
+          client_t *newentry = calloc(1, sizeof(client_t));
+          newentry->fd = unknown_current_entry->fd;
+
+          memset(outmsg, '\0', MAX);
+          memset(tempmsg, '\0', MAX);
+          select_count = 1;
+          server_current_entry = LIST_FIRST(&server_ll);
+          while (server_current_entry != NULL) {
+            server_t* next_server_entry = LIST_NEXT(server_current_entry, servers);
+            // Checks if outmsg has enough space
+            if ((strnlen(outmsg, MAX) + MAXTOPICLEN + 2 <= MAX) ||
+                (select_count == 5 &&
+                 strnlen(outmsg, MAX) + MAXTOPICLEN <= MAX)) {
+              // strncat(outmsg, svr_currentry->topic, MAXTOPICLEN);
+              snprintf(tempmsg, strnlen(outmsg, MAX) + MAXTOPICLEN, "%s%s",
+                       outmsg, server_current_entry->topic);
+              snprintf(outmsg, strnlen(outmsg, MAX) + MAXTOPICLEN, "%s",
+                       tempmsg);
+              if (select_count != n_servers)
+                strncat(outmsg, ", ", 3);
+            }
+
+            server_current_entry = next_server_entry;
+            select_count++;
+          }
+          snprintf(newentry->tx_buffer, MAX, "%s", outmsg);
+          LIST_INSERT_HEAD(&client_ll, newentry, clients);
+          LIST_REMOVE(unknown_current_entry, unknowns);
+          free(unknown_current_entry);
+        }
+        // A server's first (and only) message will always start with 's'
+        else if (strncmp(recv_str, "s", 1) == 0) {
+          // This should always parse correctly, since it should be formatted
+          // correctly on the server's end
+
+          uint16_t port = 0;
+          if (sscanf(recv_str, "s%[^;]; %hu", topic, &port) != 2) {
+            printf("Failed to parse server info\n");
+            exit(1);
+          }
+
+          repeat_name = 0;
+
+          server_t* next_server_entry;
+          LIST_FOREACH(next_server_entry, &server_ll, servers) {
+            if (strncmp(topic, next_server_entry->topic, MAXTOPICLEN - 1) == 0) {
+              repeat_name = 1;
+            }
+          }
+
+          if (repeat_name || n_servers >= 5) {
+            // Close the socket; the server will know to shut down
+            close(unknown_current_entry->fd);
+            LIST_REMOVE(unknown_current_entry, unknowns);
+            free(unknown_current_entry);
+          } else {
+            server_t *newentry = calloc(1, sizeof(server_t));
+
+            newentry->fd = unknown_current_entry->fd;
+            snprintf(newentry->topic, MAX, "%s", topic);
+            newentry->port = port;
+            newentry->ip_addr = unknown_current_entry->ip_addr;
+            n_servers++;
+
+            LIST_INSERT_HEAD(&server_ll, newentry, servers);
+            LIST_REMOVE(unknown_current_entry, unknowns);
+            free(unknown_current_entry);
+          }
+        }
+      }
+      unknown_current_entry = unknown_next;
+    }
+  }
 }
 
 void sighandler(int signo) {
-	printf("\nCaught signal: %d\n", signo);
-	exit(0);
+  printf("\nCaught signal: %d\n", signo);
+  exit(0);
 }
