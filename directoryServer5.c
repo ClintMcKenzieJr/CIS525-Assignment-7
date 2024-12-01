@@ -355,4 +355,215 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
   }
 
   // Otherwise we are still waiting for a valid command...
+  DEBUG_MSG("Still waiting for valid msg: ");
+  DEBUG_DIRTY_MSG(client->rx, client->rx_len);
+}
+
+int fill_fdset(client_t *clients, size_t clients_len, int serverfd, fd_set *read_set, fd_set *write_set) {
+  assert(clients);
+  assert(clients_len);
+  assert(read_set);
+  assert(write_set);
+
+  FD_ZERO(read_set);
+  FD_ZERO(write_set);
+
+  int max_fd = serverfd;
+  FD_SET(serverfd, read_set);
+
+  for (int i = 0; i < clients_len; i++) {
+    client_t *client = &clients[i];
+
+    if (!client)
+      continue;
+    if (client->fd > max_fd)
+      max_fd = client->fd;
+
+    FD_SET(client->fd, read_set);
+    FD_SET(client->fd, write_set);
+  }
+
+  return max_fd;
+}
+
+int main(int argc, char** argv) {
+  // 1. Create communication endpoint
+  int serverfd;
+  if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("chatServer -- can't open stream socket");
+    return 1;
+  }
+
+  /* 2.
+   * Add SO_REAUSEADDR option to prevent address in use errors (modified from:
+   * "Hands-On Network Programming with C" Van Winkle, 2019.
+   * https://learning.oreilly.com/library/view/hands-on-network-programming/9781789349863/5130fe1b-5c8c-42c0-8656-4990bb7baf2e.xhtml
+   */
+  int true = 1;
+  if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, (void *)&true,
+                 sizeof(true)) < 0) {
+    perror("chatServer -- can't set stream socket address reuse option");
+    return 1;
+  }
+
+  /* 3. Bind socket to local address */
+  struct sockaddr_in serv_addr;
+  memset((char *)&serv_addr, 0, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_addr.s_addr = inet_addr(DIR_HOST_ADDR);
+  serv_addr.sin_port = htons(DIR_TCP_PORT);
+
+  if (bind(serverfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    perror("chatServer -- can't bind local address");
+    return 1;
+  }
+
+  // 4. Set max clients
+  if (listen(serverfd, MAX_CLIENTS) < 0) {
+    perror("chatServer -- can't set max clients");
+    return 1;
+  }
+
+  fd_set readset;
+  fd_set writeset;
+
+  client_t *clients = NULL;
+  size_t clients_len = 0;
+  size_t clients_cap = 0;
+
+  // 5. Start our main loop
+  DEBUG_MSG("Starting mainloop!\n");
+  for (;;) {
+    int max_fd = fill_fdset(clients, clients_len, serverfd, &readset, &writeset);
+
+    if (select(max_fd + 1, &readset, &writeset, NULL, NULL) < 0) {
+      perror("chatServer -- can't select");
+      return 1;
+    }
+
+    // Bind new client
+    if (FD_ISSET(serverfd, &readset)) {
+      DEBUG_MSG("New Client!!\n");
+      struct sockaddr_in cli_addr;
+      socklen_t clilen = sizeof(cli_addr);
+
+      // Accept new socket
+      int newsockfd;
+      if ((newsockfd =
+               accept(serverfd, (struct sockaddr *)&cli_addr, &clilen)) < 0) {
+        perror("chatServer: accept error");
+        exit(1);
+      }
+
+      // Set socket to non-blocking
+      if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0) {
+        perror("chatServer -- can't set socket to non-blocking...");
+        return 1;
+      }
+
+      // Create the new client structure
+      client_t client = new_client();
+      client.fd = newsockfd;
+      client.addr_info = cli_addr;
+
+      // Need to create a new array
+      if (!clients) {
+        clients_cap = 2;
+        clients = calloc(clients_cap, sizeof(client_t));
+
+        assert(clients);
+      }
+
+      // Need to expand the array
+      if (clients_len + 1 >= clients_cap) {
+        clients_cap *= 2;
+        clients = reallocarray(clients, clients_cap, sizeof(client_t));
+
+        assert(clients);
+      }
+
+      // Put the client into the array
+      clients[clients_len++] = client;
+    }
+
+    for (int i = 0; i < clients_len; i++) {
+      client_t *client = &clients[i];
+
+      if (!client)
+        continue;
+
+      if (FD_ISSET(client->fd, &readset)) {
+        // We want to get anything the client might've sent us
+        client_rx(client);
+
+        // Then we process it each time, regardless if the msg
+        // is finished
+        parse_client_msg(clients, clients_len, client);
+      }
+
+      if (FD_ISSET(client->fd, &writeset)) {
+        client_tx(client);
+      }
+    }
+
+    // When we handle a client and its time for disconnect, we won't
+    // remove it from the list. Since it can cause UB, so instead we
+    // disconnect the client and set it's FD to `0`.
+    //
+    // Here we look though all the client's that have FDs of zero,
+    // and actually remove them from the list.
+    //
+    // Since we are iter over the list at the same time as modifying
+    // the list we need to be extra careful to ensure we don't RW to
+    // undefined memory.
+    //
+    // NOTE:
+    // This can be done in the main loop, but its much eaiser to
+    // verify the soundness of the above loop without this. That is
+    // why it is moved to another loop.
+    for (int i = 0; i < clients_len; i++) {
+      const client_t *client = &clients[i];
+
+      if (!client)
+        continue;
+      if (client->fd)
+        continue;
+
+      DEBUG_MSG("Removing client at index='%d' from the list!\n", i);
+
+      // Pulled from heaplist from previous assignments
+      //
+      // # Steps:
+      // 
+      // So, we have an array like this:
+      //    [ X , X , 4 , 3 , 2 , 1]
+      // 
+      // Where 'X' is an empty element. So, this array will have
+      // a length of 4, and a capacity of 6. If we want to remove
+      // element '2' from the array we need to shift '3' and '4' 
+      // down one element. 
+      //
+      // 'dest' is the source element of the move (aka the '2' from
+      // our example above) and 'src' is the element above it. 
+      // 
+      // We must also calculate the exact number of _bytes_ needed
+      // for the copy, and the result is stored in 'count'.
+      //
+      // # Graphic Explaining the process:
+      //
+      //   [ X , X , 4 , 3 , 2 , 1]  | : Starting array
+      //           [ 4 , 3 ]         | : The elements we want to move
+      //               [ 4 , 3 ]     | : Copied one element down
+      //   [ X , X , X , 4 , 3 , 1 ] X : Final Array
+      //
+      size_t el_size = sizeof(client_t);
+      client_t* src = clients + (el_size * (i + 1));
+      client_t* dest = clients + (el_size * i);
+
+      size_t count = (clients_len - i - 1) * el_size;
+      clients_len--;
+
+      memmove(dest, src, count);
+    }
+  }
 }
