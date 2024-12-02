@@ -132,9 +132,22 @@ void disconnect_client(client_t *client) {
 void client_tx(client_t *client) {
   VERIFY_CLIENT(client);
 
+  // If we are disconnecting the client, and have nothing
+  // else to send, we finally disconnect the client.
+  if (client->disconnect && !client->tx_len) {
+    // Close their socket!
+    close(client->fd);
+
+    client->fd = 0;
+    return;
+  }
+
   // Nothing to send
   if (!client->tx_len)
     return;
+
+  DEBUG_MSG("TX -- ");
+  DEBUG_DIRTY_MSG(client->rx, client->rx_len);
 
   int tx_amount;
 
@@ -248,14 +261,18 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
   assert(clients);
   assert(clients_len);
 
-  char* topic;
+  DEBUG_MSG("Got message -- ");
+  DEBUG_DIRTY_MSG(client->rx, client->rx_len);
+
+  char topic[MAXTOPICLEN] = { 0 };
   uint16_t port;
 
   // If we have nothing to read, we just skip the whole process
-  if (!client->rx) return;
+  if (!client->rx || client->disconnect) return;
 
   // Client Protocol : "Topic's Info Request" (Step 4)
   if (sscanf(client->rx, "cr%[^\n]", topic) == 1 && client->kind == CON_CLIENT) {
+    DEBUG_MSG("Client server info request!\n");
 
     int topic_len;
     if ((topic_len = strnlen(topic, MAXTOPICLEN + 2)) > MAXTOPICLEN) {
@@ -288,16 +305,20 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
   }
 
   // Client Protocol : "Request all Topics" (Step 2)
-  if (strncmp(client->rx, "cr", MAX) == 0 && client->kind == CON_NONE) {
+  if (strncmp(client->rx, "cl", 2) == 0 && client->kind == CON_NONE) {
+    DEBUG_MSG("Client topic request!\n");
     client->kind = CON_CLIENT;
 
     for (int i = 0; i < clients_len; i++) {
       client_t* topic_server  = &clients[i];
 
       // Not a valid server
-      if (client->kind != CON_SERVER) continue;
-      if (client->disconnect) continue;
-      if (!client->topic_len || !client->topic) continue;
+      if (topic_server->kind != CON_SERVER) continue;
+      if (topic_server->disconnect) continue;
+      if (!topic_server->topic_len || !topic_server->topic) continue;
+
+      DEBUG_MSG("TOPIC=");
+      DEBUG_DIRTY_MSG(topic_server->topic, topic_server->topic_len);
 
       client->tx_len += snprintf(
                                  client->tx + client->tx_len, 
@@ -314,6 +335,7 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
 
   // Server Protocol : "Send Topic Info" (Step 2)
   if (sscanf(client->rx, "s%[^;]; %hu", topic, &port) == 2 && client->kind == CON_NONE) {
+    DEBUG_MSG("Talking to a server! -- Topic=%s Port=%u\n", topic, port);
     client->kind = CON_SERVER;
 
     int topic_len;
@@ -361,7 +383,6 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
 
 int fill_fdset(client_t *clients, size_t clients_len, int serverfd, fd_set *read_set, fd_set *write_set) {
   assert(clients);
-  assert(clients_len);
   assert(read_set);
   assert(write_set);
 
@@ -427,9 +448,12 @@ int main(int argc, char** argv) {
   fd_set readset;
   fd_set writeset;
 
-  client_t *clients = NULL;
+  // Default init clients
   size_t clients_len = 0;
-  size_t clients_cap = 0;
+  size_t clients_cap = 2;
+  client_t *clients = calloc(clients_cap, sizeof(client_t));
+
+  assert(clients);
 
   // 5. Start our main loop
   DEBUG_MSG("Starting mainloop!\n");
@@ -465,14 +489,6 @@ int main(int argc, char** argv) {
       client_t client = new_client();
       client.fd = newsockfd;
       client.addr_info = cli_addr;
-
-      // Need to create a new array
-      if (!clients) {
-        clients_cap = 2;
-        clients = calloc(clients_cap, sizeof(client_t));
-
-        assert(clients);
-      }
 
       // Need to expand the array
       if (clients_len + 1 >= clients_cap) {
@@ -522,7 +538,7 @@ int main(int argc, char** argv) {
     // verify the soundness of the above loop without this. That is
     // why it is moved to another loop.
     for (int i = 0; i < clients_len; i++) {
-      const client_t *client = &clients[i];
+      client_t *client = &clients[i];
 
       if (!client)
         continue;
@@ -530,6 +546,8 @@ int main(int argc, char** argv) {
         continue;
 
       DEBUG_MSG("Removing client at index='%d' from the list!\n", i);
+
+      free_client(client);
 
       // Pulled from heaplist from previous assignments
       //

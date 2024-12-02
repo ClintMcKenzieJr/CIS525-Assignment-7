@@ -20,7 +20,7 @@
 // 0 - disable
 // 1 - enable
 //
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 
 // ----------------------- Debug Macros
 #ifndef DEBUG_MODE
