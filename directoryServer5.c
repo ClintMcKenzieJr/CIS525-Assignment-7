@@ -11,10 +11,20 @@
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <gnutls/gnutls.h>
+#include <gnutls/x509.h>
 
 // Define if you DO NOT want TLS mode
 //
 #define NON_TLS_MODE
+
+// TLS certificate files, located in /certificates
+#define KEYFILE "dServerKey.pem"
+#define CERTFILE "dServerCert.pem"
+//NEED TO DEFINE AND GENERATE CA
+gnutls_certificate_credentials_t x509_cred;
+gnutls_priority_t priority_cache;
+gnutls_session_t session;
 
 // Kind of client
 typedef enum {
@@ -155,7 +165,8 @@ void client_tx(client_t *client) {
   tx_amount = write(client->fd, client->tx, client->tx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-#error "TLS mode has not been implemented yet!"
+  tx_amount = gnutls_record_send(session, client->rx, client->tx_len) //FIX
+//#error "TLS mode has not been implemented yet!"
 #endif
 
   if (tx_amount == EWOULDBLOCK)
@@ -416,11 +427,32 @@ int fill_fdset(client_t *clients, size_t clients_len, int serverfd, fd_set *read
 }
 
 int main(int argc, char** argv) {
+
+  // gnuTLS INITIALIZATION FIX in progress- might need to make global?
+  
+
+  if (gnutls_global_init() < 0){
+    perror("directoryServer -- TLS error: can't global init gnuTLS");
+    exit(1);
+  }
+  if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){ //FIX needs to be freed with gnutls_certificate_free_credentials(&x509_cred)
+    perror("directoryServer -- TLS error: can't allocated credentials");
+    exit(1);
+  }
+  if (gnutls_certificate_set_x509_key_file(x509_cred, CERTFILE, KEYFILE, GNUTLS_X509_FMT_PEM) < 0){ //pg 169
+    perror("directoryServer -- TLS error: can't set certificate");
+    exit(1);
+  }
+  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){
+    perror("directoryServer -- TLS error: can't initialize priority cache");
+    exit(1);
+  }
+
   // 1. Create communication endpoint
   int serverfd;
   if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     perror("chatServer -- can't open stream socket");
-    return 1;
+    return 1; //FIX set all main returns to exit for consistency?
   }
 
   /* 2.
@@ -466,6 +498,20 @@ int main(int argc, char** argv) {
   // 5. Start our main loop
   DEBUG_MSG("Starting mainloop!\n");
   for (;;) {
+    //gnuTLS session setup
+    if(gnutls_init(&session, GNUTLS_SERVER) < 0){ //FIX needs to be freed with gnutls_deinit(session)
+      perror("directoryServer -- TLS error: failed to initialize session");
+      exit(1);
+    }
+    if(gnutls_priority_set(session, priority_cache) < 0){
+      perror("directoryServer -- TLS error: failed priority set");
+      exit(1);
+    }
+    if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
+      perror("directoryServer -- TLS error: failed to set credentials");
+      exit(1);
+    }
+
     int max_fd = fill_fdset(clients, clients_len, serverfd, &readset, &writeset);
 
     if (select(max_fd + 1, &readset, &writeset, NULL, NULL) < 0) {
@@ -484,14 +530,17 @@ int main(int argc, char** argv) {
       if ((newsockfd =
                accept(serverfd, (struct sockaddr *)&cli_addr, &clilen)) < 0) {
         perror("chatServer: accept error");
-        exit(1);
+        exit(1); //FIX- shouldn't this be a nonfatal error?
       }
 
       // Set socket to non-blocking
       if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0) {
         perror("chatServer -- can't set socket to non-blocking...");
-        return 1;
+        return 1; //FIX- shouldn't this be a nonfatal error? just disconnect the client
       }
+
+      // Set up transport layer -- pg 178
+      gnutls_transport_set_int(session, newsockfd);
 
       // Create the new client structure
       client_t client = new_client();

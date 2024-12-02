@@ -14,7 +14,6 @@
 
 #define MAXMSGLEN 88
 
-
 // Enable or disable debug mode
 //
 // 0 - disable
