@@ -499,7 +499,7 @@ int main(int argc, char** argv) {
       client.addr_info = cli_addr;
 
       // Need to expand the array
-      if (clients_len + 1 >= clients_cap) {
+      if (clients_len >= clients_cap) {
         clients_cap *= 2;
         clients = reallocarray(clients, clients_cap, sizeof(client_t));
 
