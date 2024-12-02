@@ -376,6 +376,14 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
     return;
   }
 
+  // If the client has filled their buffer, and still not a valid request
+  // we disconnect them.
+  if (client->rx_len >= client->rx_cap) {
+    DEBUG_MSG("Client's RX buffer is full without a valid msg, disconnecting them!\n");
+    disconnect_client(client);
+    return;
+  }
+
   // Otherwise we are still waiting for a valid command...
   DEBUG_MSG("Still waiting for valid msg: ");
   DEBUG_DIRTY_MSG(client->rx, client->rx_len);
