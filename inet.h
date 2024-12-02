@@ -1,3 +1,6 @@
+#ifndef __INET_H__
+#define __INET_H__
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -15,4 +18,6 @@
 #define DIR_TCP_PORT 41022
 
 /* Change the following to be your host addr: 129.130.10.43 for viper and 129.130.10.39 for cougar */
-#define DIR_HOST_ADDR "129.130.10.43"
+#define DIR_HOST_ADDR "127.0.0.1"
+
+#endif
