@@ -21,10 +21,9 @@
 // TLS certificate files, located in /certificates
 #define KEYFILE "dServerKey.pem"
 #define CERTFILE "dServerCert.pem"
-//NEED TO DEFINE AND GENERATE CA
+//FIX NEED TO DEFINE AND GENERATE CA
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
-gnutls_session_t session;
 
 // Kind of client
 typedef enum {
@@ -36,6 +35,7 @@ typedef enum {
 typedef struct {
   int fd;
   client_kind_t kind;
+  gnutls_session_t session; //TLS session
 
   char* topic;
   size_t topic_len;
@@ -165,7 +165,7 @@ void client_tx(client_t *client) {
   tx_amount = write(client->fd, client->tx, client->tx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-  tx_amount = gnutls_record_send(session, client->rx, client->tx_len) //FIX
+  tx_amount = gnutls_record_send(client->session, client->rx, client->tx_len)
 //#error "TLS mode has not been implemented yet!"
 #endif
 
@@ -211,7 +211,8 @@ void client_rx(client_t *client) {
                    client->rx_cap - client->rx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-#error "TLS mode has not been implemented yet!"
+  rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
+//#error "TLS mode has not been implemented yet!"
 #endif
 
   if (rx_amount == EWOULDBLOCK) return;
@@ -428,10 +429,8 @@ int fill_fdset(client_t *clients, size_t clients_len, int serverfd, fd_set *read
 
 int main(int argc, char** argv) {
 
-  // gnuTLS INITIALIZATION FIX in progress- might need to make global?
-  
-
-  if (gnutls_global_init() < 0){
+  // gnuTLS INITIALIZATION FIX -- need to register a CA
+  if (gnutls_global_init() < 0){ //FIX needs to be freed with gnutls_global_deinit();
     perror("directoryServer -- TLS error: can't global init gnuTLS");
     exit(1);
   }
@@ -498,20 +497,6 @@ int main(int argc, char** argv) {
   // 5. Start our main loop
   DEBUG_MSG("Starting mainloop!\n");
   for (;;) {
-    //gnuTLS session setup
-    if(gnutls_init(&session, GNUTLS_SERVER) < 0){ //FIX needs to be freed with gnutls_deinit(session)
-      perror("directoryServer -- TLS error: failed to initialize session");
-      exit(1);
-    }
-    if(gnutls_priority_set(session, priority_cache) < 0){
-      perror("directoryServer -- TLS error: failed priority set");
-      exit(1);
-    }
-    if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
-      perror("directoryServer -- TLS error: failed to set credentials");
-      exit(1);
-    }
-
     int max_fd = fill_fdset(clients, clients_len, serverfd, &readset, &writeset);
 
     if (select(max_fd + 1, &readset, &writeset, NULL, NULL) < 0) {
@@ -539,13 +524,29 @@ int main(int argc, char** argv) {
         continue;
       }
 
-      // Set up transport layer -- pg 178
-      gnutls_transport_set_int(session, newsockfd);
-
       // Create the new client structure
       client_t client = new_client();
       client.fd = newsockfd;
       client.addr_info = cli_addr;
+
+      //gnuTLS session setup
+      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX needs to be freed with gnutls_deinit(session)
+        perror("directoryServer -- TLS error: failed to initialize session");
+        close(newsockfd);
+        exit(1);
+      }
+      if(gnutls_priority_set(client.session, priority_cache) < 0){
+        perror("directoryServer -- TLS error: failed priority set");
+        close(newsockfd);
+        exit(1);
+      }
+      if(gnutls_credentials_set(client.session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
+        perror("directoryServer -- TLS error: failed to set credentials");
+        close(newsockfd);
+        exit(1);
+      }
+      // Set up transport layer -- pg 178
+      gnutls_transport_set_int(client.session, newsockfd);
 
       // Need to expand the array
       if (clients_len >= clients_cap) {

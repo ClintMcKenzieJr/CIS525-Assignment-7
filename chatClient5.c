@@ -4,6 +4,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
+#include <gnutls/gnutls.h>
+#include <gnutls/x509.h>
 #include "inet.h"
 #include "common.h"
 
@@ -20,6 +22,28 @@ int main()
 	size_t				msglen;
 	unsigned short port;
 	unsigned long ip_addr;
+	
+	// TLS Initialization
+	gnutls_session_t 	session;
+	gnutls_certificate_credentials_t x509_cred;
+
+	if (gnutls_global_init() < 0){ //FIX needs to be freed with gnutls_global_deinit();
+		perror("client: TLS error: can't global init gnuTLS");
+		exit(1);
+	}
+	if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){
+		perror("client: TLS error: failed to allocated x509 credentials");
+		exit(1);
+	}
+	if (gnutls_certificate_set_x509_system_trust(x509_cred) < 0){ //FIX needs to be freed with gnutls_certificate_free_credentials(&x509_cred)
+		perror("client: TLS error: failed to set system trust");
+		exit(1);
+	}
+	// initialize TLS session
+	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) { //FIX needs to be freed with gnutls_deinit(session);
+		perror("client: TLS error: failed to initialize TLS session");
+		exit(1);
+	}
 
 	/* Set up the address of the directory to be contacted. */
 	memset((char *) &dir_addr, 0, sizeof(dir_addr));
@@ -35,6 +59,15 @@ int main()
 	/* Connect to the directory. */
 	if (connect(sockfd, (struct sockaddr *) &dir_addr, sizeof(dir_addr)) < 0) {
 		perror("client: can't connect to directory");
+		exit(1);
+	}
+
+	// TLS Handshake with Directory Server
+	gnutls_transport_set_int(session, sockfd);
+	int handshake;
+	if ((handshake = gnutls_handshake(session)) < 0){
+		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		close(sockfd);
 		exit(1);
 	}
 
@@ -97,6 +130,15 @@ int main()
 
 	if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
 		perror("client: can't connect to server");
+		exit(1);
+	}
+
+	// TLS Handshake with chat Server
+	gnutls_transport_set_int(session, sockfd);
+	int handshake;
+	if ((handshake = gnutls_handshake(session)) < 0){
+		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		close(sockfd);
 		exit(1);
 	}
 
