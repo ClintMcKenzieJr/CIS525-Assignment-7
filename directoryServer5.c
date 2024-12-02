@@ -452,7 +452,7 @@ int main(int argc, char** argv) {
   int serverfd;
   if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     perror("chatServer -- can't open stream socket");
-    return 1; //FIX set all main returns to exit for consistency?
+    exit(1);
   }
 
   /* 2.
@@ -464,7 +464,7 @@ int main(int argc, char** argv) {
   if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, (void *)&true,
                  sizeof(true)) < 0) {
     perror("chatServer -- can't set stream socket address reuse option");
-    return 1;
+    exit(1);
   }
 
   /* 3. Bind socket to local address */
@@ -476,13 +476,13 @@ int main(int argc, char** argv) {
 
   if (bind(serverfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
     perror("chatServer -- can't bind local address");
-    return 1;
+    exit(1);
   }
 
   // 4. Set max clients
   if (listen(serverfd, MAX_CLIENTS) < 0) {
     perror("chatServer -- can't set max clients");
-    return 1;
+    exit(1);
   }
 
   fd_set readset;
@@ -516,7 +516,7 @@ int main(int argc, char** argv) {
 
     if (select(max_fd + 1, &readset, &writeset, NULL, NULL) < 0) {
       perror("chatServer -- can't select");
-      return 1;
+      exit(1);
     }
 
     // Bind new client
@@ -530,13 +530,13 @@ int main(int argc, char** argv) {
       if ((newsockfd =
                accept(serverfd, (struct sockaddr *)&cli_addr, &clilen)) < 0) {
         perror("chatServer: accept error");
-        exit(1); //FIX- shouldn't this be a nonfatal error?
+        continue;
       }
 
       // Set socket to non-blocking
       if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0) {
         perror("chatServer -- can't set socket to non-blocking...");
-        return 1; //FIX- shouldn't this be a nonfatal error? just disconnect the client
+        continue;
       }
 
       // Set up transport layer -- pg 178
@@ -548,7 +548,7 @@ int main(int argc, char** argv) {
       client.addr_info = cli_addr;
 
       // Need to expand the array
-      if (clients_len + 1 >= clients_cap) {
+      if (clients_len >= clients_cap) {
         clients_cap *= 2;
         clients = reallocarray(clients, clients_cap, sizeof(client_t));
 

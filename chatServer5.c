@@ -15,26 +15,29 @@ size_t strnlen(const char *s, size_t maxlen);
 struct entry {
 	int fd;
 	char name[MAXNAMELEN];
+	char *inptr, *outptr;
+	char inBuffer[MAX], outBuffer[MAX];
 	LIST_ENTRY(entry) entries;
 };
 
 LIST_HEAD(listhead, entry);
 
-void setwritelist(struct listhead*, struct listhead*, struct entry*);
+int nonblockread(struct entry*);
+void setoutmsgs(struct listhead*, struct entry*, char*);
 void sighandler(int);
 
 int main(int argc, char **argv)
 {
-	int				sockfd, newsockfd, maxsockfd, dirsockfd, i, readval;
-	unsigned short port;
+	int		sockfd, newsockfd, maxsockfd, dirsockfd, i, j, k, nwritten;
+	unsigned short	port;
 	unsigned int	clilen;
 	struct sockaddr_in cli_addr, serv_addr, dir_addr;
-	char				s[MAX], msg[MAXMSGLEN], outmsg[MAX], topic[MAXTOPICLEN];
+	char msg[MAXMSGLEN], outmsg[MAX], topic[MAXTOPICLEN];
 	fd_set readset, writeset;
-	struct listhead readlist, writelist;
-
+	struct listhead clilist;
 	struct entry *currentry, *e2;
 	int firstuser = 1;
+	
 
 	if (argc != 3) {
 		printf("Two arguments required: topic and port\n");
@@ -69,6 +72,9 @@ int main(int argc, char **argv)
 		perror("server: can't open stream socket");
 		exit(1);
 	}
+	
+	// TODO / FIXME : We probably don't need to set the Server -> Directory socket to nonblocking, right?
+	// If we don't need to, then there should be a comment here about why we don't need it to be nonblocking
 
 	if (connect(dirsockfd, (struct sockaddr *) &dir_addr, sizeof(dir_addr)) < 0) {
 		perror("server: can't connect to directory");
@@ -78,14 +84,13 @@ int main(int argc, char **argv)
 
 	// Write topic and port to directory (and keep socket open so the directory knows
 	// the server is still up)
-	snprintf(s, MAX, "s%s; %hu", topic, port);
-	write(dirsockfd, s, MAX);
+	snprintf(outmsg, MAX, "s%s; %hu", topic, port);
+	write(dirsockfd, outmsg, MAX);
 
 
 	// Continue with normal server operations
 
-	LIST_INIT(&readlist);
-	LIST_INIT(&writelist);
+	LIST_INIT(&clilist);
 
 	signal(SIGINT, sighandler);
 
@@ -114,170 +119,181 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	/* now we're ready to start accepting client connections */
 	listen(sockfd, 5);
-	maxsockfd = sockfd;
-	if (dirsockfd > maxsockfd) maxsockfd = dirsockfd;
 
 	for (;;) {
 
 		FD_ZERO(&readset);
 		FD_ZERO(&writeset);
-
-		// for fd in list
-		LIST_FOREACH(currentry, &readlist, entries) {
-			FD_SET(currentry->fd, &readset);
-		}
 		FD_SET(sockfd, &readset);
-		FD_SET(dirsockfd, &readset);
 
-		LIST_FOREACH(currentry, &writelist, entries) {
+		maxsockfd = sockfd;
+
+		LIST_FOREACH(currentry, &clilist, entries) {
+			FD_SET(currentry->fd, &readset);
 			FD_SET(currentry->fd, &writeset);
+			if (maxsockfd < currentry->fd) {maxsockfd = currentry->fd;}
 		}
 
-		// select call here
-		if ((i = select((maxsockfd + 1), &readset, &writeset, NULL, NULL)) > 0) {
-
-			if (FD_ISSET(dirsockfd, &readset)) {
-				readval = read(dirsockfd, s, MAX);
-				if (readval < 0) {
-					printf("server: directory connection unexpectedly closed\n");
-					exit(0);
-				}
-				else if (readval == 0) {
-					printf("server: directory rejected server (or shut down)\n");
-					exit(0);
-				}
-				else {
-					// This really shouldn't happen
-					printf("server: received unexpected message from directory: %s", s);
-				}
-			}
-
-			// Accept a new connection request
+		if ((i=select(maxsockfd+1, &readset, &writeset, NULL, NULL)) > 0) {
+			/* Handle listening socket */
 			if (FD_ISSET(sockfd, &readset)) {
 				clilen = sizeof(cli_addr);
 				newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 				if (newsockfd < 0) {
 					perror("server: accept error");
-					exit(1);
 				} else {
-					// When accepting, add entry with fd=newsockfd and name={'\0'}
-					struct entry *newentry = malloc(sizeof(struct entry));
-					newentry->fd = newsockfd;
-					memset(newentry->name, '\0', MAXNAMELEN);
-					LIST_INSERT_HEAD(&readlist, newentry, entries);
-					if (maxsockfd < newsockfd) maxsockfd = newsockfd;
+					if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) != 0 ) {
+						perror("server: couldn't set new client socket to nonblocking");
+						close(newsockfd);
+					} else {
+						// Handle successful connection (set up new entry)
+						struct entry *newentry = malloc(sizeof(struct entry));
+						newentry->fd = newsockfd;
+						memset(newentry->name, '\0', MAXNAMELEN);
+						memset(newentry->inBuffer, '\0', MAX);
+						memset(newentry->outBuffer, '\0', MAX);
+						newentry->inptr = newentry->inBuffer;
+						newentry->outptr = newentry->outBuffer;
+						LIST_INSERT_HEAD(&clilist, newentry, entries);
 
-					snprintf(s, MAX, "Please input a username (max ten chars):");
-					write(newsockfd, s, MAX);
+						snprintf(newentry->outBuffer, MAX, "Please input a username (max ten chars):");
+					}
 				}
 			}
 
-			// for fd in readlist:
-			currentry = LIST_FIRST(&readlist);
+			// Reading from clients
+			currentry = LIST_FIRST(&clilist);
 			while (currentry != NULL) {
 				e2 = LIST_NEXT(currentry, entries);
 				if (FD_ISSET(currentry->fd, &readset)) {
-					// if name not set, accept msg as name, else send out msg
-					/* Read the request from the client */
-					readval = read(currentry->fd, s, MAX);
-					if (readval < 0) {
-						fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
-						// also disconnects client below
-					}
-					if (readval <= 0) {
-						// handle client disconnect
+					// nonblockread returns 1 on finished receiving msg, 0 on partial read, -1 on failure or closed connection
+					if ((j=nonblockread(currentry)) == 1) {
+						// Client has no set name, name will be set based on message
+						if (strncmp(currentry->name, "\0", MAXNAMELEN) == 0) {
+							if (strncmp(currentry->inBuffer, "\0", MAXNAMELEN) == 0) {
+								snprintf(currentry->outBuffer, MAX, "An empty username is invalid, please enter a new name:");
+								currentry->outptr = currentry->outBuffer;
+							}
+							else {
+								int repeatname = 0;
+								struct entry *ent;
+								LIST_FOREACH(ent, &clilist, entries) {
+									if ((strncmp(ent->name, "\0", MAXNAMELEN) != 0) && (strncmp(currentry->inBuffer, ent->name, MAXNAMELEN-1) == 0)) {
+										repeatname = 1;
+									}
+								}
+								if (repeatname) {
+									snprintf(currentry->outBuffer, MAX, "That username is already taken, please enter a new name:");
+									currentry->outptr = currentry->outBuffer;
+								}
+								else {
+									// Add username
+									// This line has a truncation warning.  It's intended to truncate if the input is too large, so the warning is expected and fine.
+									snprintf(currentry->name, MAXNAMELEN, "%s", currentry->inBuffer);
+									if (firstuser) {
+										snprintf(currentry->outBuffer, MAX, "You are the first user to join the chat\nYou may now begin chatting (max msg length is 87 chars)");
+										firstuser = 0;
+									} else {
+										snprintf(currentry->outBuffer, MAX, "You may now begin chatting (max message length is 87 chars)");
+									}
+									currentry->outptr = currentry->outBuffer;
+									snprintf(outmsg, MAX, "%s has joined the chat", currentry->name);
+									setoutmsgs(&clilist, currentry, outmsg);
+								}
+							}
+						} else {
+							// User has name and sent message
+							if (snprintf(msg, MAXMSGLEN, "%s", currentry->inBuffer) > (MAXMSGLEN - 1)) {
+								snprintf(currentry->outBuffer, MAX, "Truncated: %s", msg);
+								currentry->outptr = currentry->outBuffer;
+							}
+							snprintf(outmsg, MAX, "%s: %s", currentry->name, msg);
+							// Send message to all clients except the writer
+							setoutmsgs(&clilist, currentry, outmsg);
+						}
+						// Reset client's buffer and pointer
+						memset(currentry->inBuffer, '\0', MAX);
+						currentry->inptr = currentry->inBuffer;
+					} else if (j == -1) {
+						// Close socket, free entry, remove from list
 						close(currentry->fd);
-						setwritelist(&readlist, &writelist, currentry);
 						if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
 							snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
+							setoutmsgs(&clilist, currentry, outmsg);
 						}
 						LIST_REMOVE(currentry, entries);
 						free(currentry);
 					}
-					else if (strncmp(currentry->name, "\0", MAXNAMELEN) == 0) {
-						if (strncmp(s, "\0", MAXNAMELEN) == 0) {
-							snprintf(s, MAX, "An empty username is invalid, please enter a new name:");
-							write(currentry->fd, s, MAX);
-						}
-						else {
-							int repeatname = 0;
-							struct entry *ent;
-							LIST_FOREACH(ent, &readlist, entries) {
-								if ((strncmp(ent->name, "\0", MAXNAMELEN) != 0) && (strncmp(s, ent->name, MAXNAMELEN-1) == 0)) repeatname = 1;
-							}
-							if (repeatname) {
-								snprintf(s, MAX, "That username is already taken, please enter a new name:");
-								write(currentry->fd, s, MAX);
-							}
-							else {
-								// Add username
-								if (snprintf(currentry->name, MAXNAMELEN, "%s", s) > (MAXNAMELEN - 1)) {
-									snprintf(s, MAX, "Your name was truncated to %s", currentry->name);
-									write(currentry->fd, s, MAX);
-								}
-								if (firstuser) {
-									snprintf(s, MAX, "You are the first user to join the chat");
-									write(currentry->fd, s, MAX);
-									firstuser = 0;
-								}
-								snprintf(s, MAX, "You may now begin chatting (max message length is 87 chars)");
-								write(currentry->fd, s, MAX);
-								setwritelist(&readlist, &writelist, currentry);
-								snprintf(outmsg, MAX, "%s has joined the chat", currentry->name);
-							}
-						}
-					}
-					else {
-						// User has name and sent message
-						// Add all sockets in read list except the writer
-						setwritelist(&readlist, &writelist, currentry);
-
-						// The check is really just to disable the truncation warning
-						if (snprintf(msg, MAXMSGLEN, "%s", s) > (MAXMSGLEN - 1)) {
-							snprintf(s, MAX, "Truncated: %s", msg);
-							write(currentry->fd, s, MAX);
-						}
-						snprintf(outmsg, MAX, "%s: %s", currentry->name, msg);
-					}
+					// Do nothing on partial read
 				}
 				currentry = e2;
 			}
 
-			// for fd in writelist:
-			currentry = LIST_FIRST(&writelist);
+			// Writing to clients
+			currentry = LIST_FIRST(&clilist);
 			while (currentry != NULL) {
 				e2 = LIST_NEXT(currentry, entries);
-				if (FD_ISSET(currentry->fd, &writeset)) {
-					// Send message, then remove entry from writelist
-					write(currentry->fd, outmsg, MAX);
-					LIST_REMOVE(currentry, entries);
-					free(currentry);
+				if (FD_ISSET(currentry->fd, &writeset) && ((k = &(currentry->outBuffer[MAX]) - currentry->outptr) > 0)) {
+					// Send message
+					if ((nwritten = write(currentry->fd, currentry->outptr, k)) < 0) {
+						if (errno != EWOULDBLOCK && errno != EAGAIN) {
+							perror("server: write error on client socket");
+							// Close socket, free entry, remove from list
+							close(currentry->fd);
+							if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
+								snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
+								setoutmsgs(&clilist, currentry, outmsg);
+							}
+							LIST_REMOVE(currentry, entries);
+							free(currentry);
+						}
+					} else {
+						currentry->outptr += nwritten;
+					}
 				}
 				currentry = e2;
 			}
-		}
-	}
+		} /* end of if select */
+	} /* end of infinite for loop */
+
+	close(sockfd);
+
+	//return or exit(0) is implied; no need to do anything because main() ends
 }
 
-void setwritelist(struct listhead *readlist, struct listhead *writelist, struct entry *currentry) {
+// Attempts to read from a given client's socket
+// Returns 1 on reading full message, 0 on partial read, and -1 on read failure or closed connection
+int nonblockread(struct entry *e) {
+	int nread = 0;
+	if ((nread = read(e->fd, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
+		if (errno == EWOULDBLOCK || errno == EAGAIN) {
+			return 0; // msg not fully received; shouldn't happen, but best to be safe
+		}
+		fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
+		return -1;
+	} else if (nread > 0) {
+		e->inptr += nread;
+		// Need to check if msg fully received
+		// Client always writes MAX
+		if (&(e->inBuffer[MAX]) == e->inptr) {
+			return 1;
+		}
+		return 0;
+	}
+	// read returned 0, closed connection
+	return -1;
+}
+
+// Sets all clients' out buffers to the given message, other than the specified client
+void setoutmsgs(struct listhead *clilist, struct entry *currentry, char *outmsg) {
 	struct entry *readent;
 
-	// Clear writelist beforehand
-	struct entry *e1, *e2;
-	e1 = LIST_FIRST(writelist);
-	while (e1 != NULL) {
-		e2 = LIST_NEXT(e1, entries);
-		LIST_REMOVE(e1, entries);
-		free(e1);
-		e1 = e2;
-	}
-
-	LIST_FOREACH(readent, readlist, entries) {
+	LIST_FOREACH(readent, clilist, entries) {
 		if (readent != currentry && strncmp(readent->name, "\0", MAXNAMELEN) != 0) {
-			struct entry *newentry = malloc(sizeof(struct entry));
-			newentry->fd = readent->fd;
-			LIST_INSERT_HEAD(writelist, newentry, entries);
+			snprintf(readent->outBuffer, MAX, "%s", outmsg);
+			readent->outptr = readent->outBuffer;
 		}
 	}
 }
