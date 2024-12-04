@@ -16,11 +16,11 @@
 
 // Define if you DO NOT want TLS mode
 //
-#define NON_TLS_MODE
+#define NON_TLS_MODE = 0
 
 // TLS certificate files, located in /certificates
-#define KEYFILE "dServerKey.pem"
-#define CERTFILE "dServerCert.pem"
+#define KEYFILE "certificates/dServerKey.pem"
+#define CERTFILE "certificates/dServerCert.pem"
 //FIX NEED TO DEFINE AND GENERATE CA
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
@@ -521,6 +521,7 @@ int main(int argc, char** argv) {
       // Set socket to non-blocking
       if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0) {
         perror("chatServer -- can't set socket to non-blocking...");
+        close(newsockfd);
         continue;
       }
 

@@ -27,7 +27,7 @@ CFLAGS	+= -ggdb3
 					-Wformat-overflow=2 -Wformat-signedness
 
 # Uncomment the LIBS line below containing the library that you're using
-#LIBS	= -lcrypto -lgnutls
+LIBS	= -lcrypto -lgnutls
 #LIBS	= -lcrypto -lssl
 
 all:	tls

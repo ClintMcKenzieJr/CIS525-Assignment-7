@@ -27,7 +27,7 @@ int main()
 	gnutls_session_t 	session;
 	gnutls_certificate_credentials_t x509_cred;
 
-	if (gnutls_global_init() < 0){ //FIX needs to be freed with gnutls_global_deinit();
+	if (gnutls_global_init() < 0){ 
 		perror("client: TLS error: can't global init gnuTLS");
 		exit(1);
 	}
@@ -35,12 +35,12 @@ int main()
 		perror("client: TLS error: failed to allocated x509 credentials");
 		exit(1);
 	}
-	if (gnutls_certificate_set_x509_system_trust(x509_cred) < 0){ //FIX needs to be freed with gnutls_certificate_free_credentials(&x509_cred)
+	if (gnutls_certificate_set_x509_system_trust(x509_cred) < 0){
 		perror("client: TLS error: failed to set system trust");
 		exit(1);
 	}
 	// initialize TLS session
-	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) { //FIX needs to be freed with gnutls_deinit(session);
+	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) {
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
@@ -74,10 +74,10 @@ int main()
 	// Request servers, wait to read, then wait for input, then write and wait to read
 	// Request server list
 	snprintf(s, MAX, "cl");
-	write(sockfd, s, MAX);
+	gnutls_record_send(session, s, MAX);
 
 	// Read server list
-	if ((nread = read(sockfd, s, MAX)) < 0) {
+	if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
 		perror("Error reading from directory");
 		exit(1);
 	} else if (nread == 0) {
@@ -93,10 +93,10 @@ int main()
 	}
 	snprintf(s, MAX, "cr%s", input);
 
-	write(sockfd, s, MAX);
+	gnutls_record_send(session, s, MAX);
 
 	// Read server connection info
-	if ((nread = read(sockfd, s, MAX)) < 0) {
+	if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
 		printf("Error reading from directory\n");
 		exit(1);
 	} else if (nread == 0) {
@@ -135,7 +135,6 @@ int main()
 
 	// TLS Handshake with chat Server
 	gnutls_transport_set_int(session, sockfd);
-	int handshake;
 	if ((handshake = gnutls_handshake(session)) < 0){
 		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		close(sockfd);
@@ -159,7 +158,7 @@ int main()
 					if (msglen > 0 && s[msglen - 1] == '\n') {
 						s[msglen - 1] = '\0';
 					}
-					write(sockfd, s, MAX);
+					gnutls_record_send(session, s, MAX);
 				} else {
 					printf("Error reading or parsing user input\n");
 				}
@@ -167,7 +166,7 @@ int main()
 
 			/* Check whether there's a message from the server to read */
 			if (FD_ISSET(sockfd, &readset)) {
-				if ((nread = read(sockfd, s, MAX)) < 0) {
+				if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
 					perror("Error reading from server\n");
 					exit(1);
 				} else if (nread == 0) {
@@ -180,4 +179,7 @@ int main()
 		}
 	}
 	close(sockfd);
+	gnutls_certificate_free_credentials(x509_cred);
+	gnutls_deinit(session);
+	gnutls_global_deinit();
 }
