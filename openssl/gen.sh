@@ -129,11 +129,36 @@ IP.1 = 192.168.1.5
 IP.2 = 192.168.1.6
 EOF
 
+cat > csrDirectoryServer.conf <<EOF
+[ req ]
+default_bits = 2048
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+
+[ dn ]
+C = US
+ST = Kansas
+L = Manhattan
+O = KSU
+OU = cis525
+CN = Directory Server
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = 192.168.1.5
+IP.2 = 192.168.1.6
+EOF
+
 openssl req -new -key server.key -out serverBirds.csr -config csrBirds.conf
 openssl req -new -key server.key -out serverComputers.csr -config csrComputers.conf
 openssl req -new -key server.key -out serverFood.csr -config csrFood.conf
 openssl req -new -key server.key -out serverCoolThings.csr -config csrCoolThings.conf
 openssl req -new -key server.key -out serverFlipperHacks.csr -config csrFlipperHacks.conf
+openssl req -new -key server.key -out serverDirectoryServer.csr -config csrDirectoryServer.conf
 
 cat > cert.conf <<EOF
 authorityKeyIdentifier=keyid,issuer
@@ -177,5 +202,12 @@ openssl x509 -req \
     -in serverFlipperHacks.csr \
     -CA rootCA.crt -CAkey rootCA.key \
     -CAcreateserial -out serverFlipperHacks.crt \
+    -days 365 \
+    -sha256 -extfile cert.conf
+
+openssl x509 -req \
+    -in serverDirectoryServer.csr \
+    -CA rootCA.crt -CAkey rootCA.key \
+    -CAcreateserial -out serverDirectoryServer.crt \
     -days 365 \
     -sha256 -extfile cert.conf
