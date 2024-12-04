@@ -5,11 +5,11 @@ Run the files using make; ./directoryServer2 &; ./chatServer2 [topic: string] [p
 // For example, the chat servers may not be run with command line args
 
 Acceptable Server Names: (Servers we have made certificates for)
-1.
-2.
-3.
-4.
-5.
+1. Birds
+2. Computers
+3. Cool Things
+4. Flipper Hacks
+5. Food
 
 A server registers with the directory by connecting and sending its topic name and port number.  Topic 
 names are limited to 18 characters (5 servers * 18 chars + ", " * (5-1) servers = 98 chars, 99 with 

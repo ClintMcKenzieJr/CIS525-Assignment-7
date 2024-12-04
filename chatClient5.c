@@ -9,6 +9,9 @@
 #include "inet.h"
 #include "common.h"
 
+// TLS certificate files, located in /certificates
+#define CAFILE "FIX" //set file location here
+
 // Prevents an unnecessary warning
 size_t strnlen(const char *s, size_t maxlen);
 
@@ -35,8 +38,8 @@ int main()
 		perror("client: TLS error: failed to allocated x509 credentials");
 		exit(1);
 	}
-	if (gnutls_certificate_set_x509_system_trust(x509_cred) < 0){
-		perror("client: TLS error: failed to set system trust");
+	if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0){
+		perror("client: TLS error: failed to set CA file");
 		exit(1);
 	}
 	// initialize TLS session
@@ -44,6 +47,8 @@ int main()
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
+
+	gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
 
 	/* Set up the address of the directory to be contacted. */
 	memset((char *) &dir_addr, 0, sizeof(dir_addr));

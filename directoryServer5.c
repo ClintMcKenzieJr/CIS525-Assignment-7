@@ -21,7 +21,7 @@
 // TLS certificate files, located in /certificates
 #define KEYFILE "certificates/dServerKey.pem"
 #define CERTFILE "certificates/dServerCert.pem"
-//FIX NEED TO DEFINE AND GENERATE CA
+#define CAFILE "FIX" //path to crt file
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
 
@@ -438,11 +438,15 @@ int main(int argc, char** argv) {
     perror("directoryServer -- TLS error: can't allocated credentials");
     exit(1);
   }
+  if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0) {
+    perror("directoryServer -- TLS error: can't set trust file");
+    exit(1);
+  }
   if (gnutls_certificate_set_x509_key_file(x509_cred, CERTFILE, KEYFILE, GNUTLS_X509_FMT_PEM) < 0){ //pg 169
     perror("directoryServer -- TLS error: can't set certificate");
     exit(1);
   }
-  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){
+  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
     perror("directoryServer -- TLS error: can't initialize priority cache");
     exit(1);
   }
@@ -531,7 +535,7 @@ int main(int argc, char** argv) {
       client.addr_info = cli_addr;
 
       //gnuTLS session setup
-      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX needs to be freed with gnutls_deinit(session)
+      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX flag might need to be GNUTLS_NONBLOCK; needs to be freed with gnutls_deinit(session)
         perror("directoryServer -- TLS error: failed to initialize session");
         close(newsockfd);
         exit(1);

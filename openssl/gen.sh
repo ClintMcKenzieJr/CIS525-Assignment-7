@@ -9,6 +9,7 @@ openssl req -x509 \
 
 openssl genrsa -out server.key 2048
 
+
 cat > csrBirds.conf <<EOF
 [ req ]
 default_bits = 2048
