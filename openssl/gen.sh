@@ -7,7 +7,12 @@ openssl req -x509 \
     -subj "/CN=rootCA/C=US/L=Manhattan" \
     -keyout rootCA.key -out rootCA.crt 
 
-openssl genrsa -out server.key 2048
+openssl genrsa -out serverBirds.key 2048
+openssl genrsa -out serverComputers.key 2048
+openssl genrsa -out serverFood.key 2048
+openssl genrsa -out serverCoolThings.key 2048
+openssl genrsa -out serverFlipperHacks.key 2048
+openssl genrsa -out serverDirectoryServer.key 2048
 
 
 cat > csrBirds.conf <<EOF
@@ -154,12 +159,12 @@ IP.1 = 192.168.1.5
 IP.2 = 192.168.1.6
 EOF
 
-openssl req -new -key server.key -out serverBirds.csr -config csrBirds.conf
-openssl req -new -key server.key -out serverComputers.csr -config csrComputers.conf
-openssl req -new -key server.key -out serverFood.csr -config csrFood.conf
-openssl req -new -key server.key -out serverCoolThings.csr -config csrCoolThings.conf
-openssl req -new -key server.key -out serverFlipperHacks.csr -config csrFlipperHacks.conf
-openssl req -new -key server.key -out serverDirectoryServer.csr -config csrDirectoryServer.conf
+openssl req -new -key serverBirds.key -out serverBirds.csr -config csrBirds.conf
+openssl req -new -key serverComputers.key -out serverComputers.csr -config csrComputers.conf
+openssl req -new -key serverFood.key -out serverFood.csr -config csrFood.conf
+openssl req -new -key serverCoolThings.key -out serverCoolThings.csr -config csrCoolThings.conf
+openssl req -new -key serverFlipperHacks.key -out serverFlipperHacks.csr -config csrFlipperHacks.conf
+openssl req -new -key serverDirectoryServer.key -out serverDirectoryServer.csr -config csrDirectoryServer.conf
 
 cat > cert.conf <<EOF
 authorityKeyIdentifier=keyid,issuer
