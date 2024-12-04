@@ -19,9 +19,9 @@
 #define NON_TLS_MODE = 0
 
 // TLS certificate files, located in /certificates
-#define KEYFILE "certificates/dServerKey.pem"
-#define CERTFILE "certificates/dServerCert.pem"
-#define CAFILE "FIX" //path to crt file
+#define KEYFILE "openssl/serverDirectoryServer.key"
+#define CERTFILE "openssl/serverDirectoryServer.crt"
+#define CAFILE "openssl/rootCA.crt" //path to crt file
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
 

@@ -10,7 +10,7 @@
 #include "common.h"
 
 // TLS certificate files, located in /certificates
-#define CAFILE "FIX" //set file location here
+#define CAFILE "openssl/rootCA.crt" //set file location here
 
 // Prevents an unnecessary warning
 size_t strnlen(const char *s, size_t maxlen);
@@ -25,6 +25,7 @@ int main()
 	size_t				msglen;
 	unsigned short port;
 	unsigned long ip_addr;
+	gnutls_priority_t priority_cache;
 	
 	// TLS Initialization
 	gnutls_session_t 	session;
@@ -42,11 +43,19 @@ int main()
 		perror("client: TLS error: failed to set CA file");
 		exit(1);
 	}
+	if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
+		perror("client: TLS error: can't initialize priority cache");
+		exit(1);
+	}
 	// initialize TLS session
 	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) {
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
+	if(gnutls_priority_set(session, priority_cache) < 0){
+        perror("client: TLS error: failed priority set");
+        exit(1);
+    }
 
 	gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
 
