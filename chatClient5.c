@@ -89,6 +89,7 @@ int main()
 	gnutls_transport_set_int(session, sockfd);
 	int handshake;
 	if ((handshake = gnutls_handshake(session)) < 0){
+		// TLS Handshake error handling
 		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		gnutls_datum_t out;
 		int type = gnutls_certificate_type_get(session);

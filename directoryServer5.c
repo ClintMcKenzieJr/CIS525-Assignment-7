@@ -22,6 +22,12 @@
 #define KEYFILE "openssl/serverDirectoryServer.key"
 #define CERTFILE "openssl/serverDirectoryServer.crt"
 #define CAFILE "openssl/rootCA.crt" //path to crt file
+
+#define LOOP_CHECK(rval, cmd) \
+	do {                  \
+		rval = cmd;   \
+	} while (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED)
+#define CRLFILE "FIX" //FIX need to implement
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
 
@@ -535,25 +541,59 @@ int main(int argc, char** argv) {
       client.fd = newsockfd;
       client.addr_info = cli_addr;
 
+      // Put the client into the array
+      clients[clients_len++] = client;
+      client_t *clientptr = &clients[clients_len - 1];
+
       //gnuTLS session setup
+      int TLSfail = 0;
       if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX flag might need to be GNUTLS_NONBLOCK; needs to be freed with gnutls_deinit(session)
         perror("directoryServer -- TLS error: failed to initialize session");
-        close(newsockfd);
-        exit(1);
+        disconnect_client(clientptr);
+        TLSfail = 1;
       }
       if(gnutls_priority_set(client.session, priority_cache) < 0){
         perror("directoryServer -- TLS error: failed priority set");
-        close(newsockfd);
-        exit(1);
+        disconnect_client(clientptr);
+        TLSfail = 1;
       }
       if(gnutls_credentials_set(client.session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
         perror("directoryServer -- TLS error: failed to set credentials");
-        close(newsockfd);
-        exit(1);
+        disconnect_client(clientptr);
+        TLSfail = 1;
       }
-      // Set up transport layer -- pg 178
-      gnutls_transport_set_int(client.session, newsockfd);
+      //FIX TLS CRL set-- may or may not be needed
+      if (gnutls_certificate_set_x509_crl_file(x509_cred, CRLFILE, GNUTLS_X509_FMT_PEM) < 0) {
+        perror("directoryServer -- TLS error: failed to set CRL file");
+        disconnect_client(clientptr);
+        TLSfail = 1;
+      }
 
+      if (!TLSfail) {
+        // Set up transport layer -- pg 178
+        gnutls_transport_set_int(client.session, newsockfd);
+        
+        //TLS handshake
+        int handshake;
+        LOOP_CHECK(handshake, gnutls_handshake(client.session));
+        if (handshake < 0 ) {
+          //disconnect Client- handshake failed
+          disconnect_client(clientptr);
+          //FIX - need session_deinit
+          // TLS Handshake error handling
+          fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+          gnutls_datum_t out;
+          int type = gnutls_certificate_type_get(client.session);
+          unsigned status = gnutls_session_get_verify_cert_status(client.session);
+          gnutls_certificate_verification_status_print(status, type, &out, 0);
+          fprintf(stderr, "cert verify output: %s\n", out.data);
+          gnutls_free(out.data);
+        }
+        else {
+          fprintf(stderr, "directory Server: Handshake completed!\n");
+        }
+      }
+     
       // Need to expand the array
       if (clients_len >= clients_cap) {
         clients_cap *= 2;
@@ -561,9 +601,6 @@ int main(int argc, char** argv) {
 
         assert(clients);
       }
-
-      // Put the client into the array
-      clients[clients_len++] = client;
     }
 
     for (int i = 0; i < clients_len; i++) {
