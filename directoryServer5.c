@@ -31,6 +31,14 @@
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
 
+//frees all allocated memory for TLS by calling corrosponding gnuTLS functions
+//Note that session de-initializization is handled when client is freed
+void closeTLS(){
+  gnutls_global_deinit();
+  gnutls_certificate_free_credentials(x509_cred);
+  gnutls_priority_deinit(priority_cache);
+}
+
 // Kind of client
 typedef enum {
   CON_SERVER,
@@ -100,11 +108,13 @@ client_t new_client(void) {
 
   if (!client.tx) {
     fprintf(stderr, "Failed to init a new client, TX buffer ptr was invalid\n");
+    closeTLS();
     exit(1);
   }
 
   if (!client.rx) {
     fprintf(stderr, "Failed to init a new client, RX buffer ptr was invalid\n");
+    closeTLS();
     exit(1);
   }
 
@@ -119,6 +129,8 @@ void free_client(client_t *client) {
   if (client->rx) free(client->rx);
   if (client->tx) free(client->tx);
   if (client->topic) free(client->topic);
+  //TLS deinit
+  gnutls_deinit(client->session);
 
   // This is a saftey thing, we cannot double free
   // pointers if we entirely forget what they were
@@ -137,6 +149,7 @@ void disconnect_client(client_t *client) {
 
   client->disconnect = 1;
   client->rx_len = 0;
+  
 }
 
 // Send data to client
@@ -436,25 +449,32 @@ int fill_fdset(client_t *clients, size_t clients_len, int serverfd, fd_set *read
 
 int main(int argc, char** argv) {
 
-  // gnuTLS INITIALIZATION FIX -- need to register a CA
+  // gnuTLS INITIALIZATION
   if (gnutls_global_init() < 0){ //FIX needs to be freed with gnutls_global_deinit();
     perror("directoryServer -- TLS error: can't global init gnuTLS");
     exit(1);
   }
-  if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){ //FIX needs to be freed with gnutls_certificate_free_credentials(&x509_cred)
+  if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){
     perror("directoryServer -- TLS error: can't allocated credentials");
+    gnutls_global_deinit();
     exit(1);
   }
   if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0) {
     perror("directoryServer -- TLS error: can't set trust file");
+    gnutls_global_deinit();
+    gnutls_certificate_free_credentials(x509_cred);
     exit(1);
   }
   if (gnutls_certificate_set_x509_key_file(x509_cred, CERTFILE, KEYFILE, GNUTLS_X509_FMT_PEM) < 0){ //pg 169
     perror("directoryServer -- TLS error: can't set certificate");
+    gnutls_global_deinit();
+    gnutls_certificate_free_credentials(x509_cred);
     exit(1);
   }
-  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
+  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){
     perror("directoryServer -- TLS error: can't initialize priority cache");
+    gnutls_global_deinit();
+    gnutls_certificate_free_credentials(x509_cred);
     exit(1);
   }
 
@@ -462,6 +482,7 @@ int main(int argc, char** argv) {
   int serverfd;
   if ((serverfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     perror("chatServer -- can't open stream socket");
+    closeTLS();
     exit(1);
   }
 
@@ -474,6 +495,7 @@ int main(int argc, char** argv) {
   if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, (void *)&true,
                  sizeof(true)) < 0) {
     perror("chatServer -- can't set stream socket address reuse option");
+    closeTLS();
     exit(1);
   }
 
@@ -486,12 +508,14 @@ int main(int argc, char** argv) {
 
   if (bind(serverfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
     perror("chatServer -- can't bind local address");
+    closeTLS();
     exit(1);
   }
 
   // 4. Set max clients
   if (listen(serverfd, MAX_CLIENTS) < 0) {
     perror("chatServer -- can't set max clients");
+    closeTLS();
     exit(1);
   }
 
@@ -512,6 +536,7 @@ int main(int argc, char** argv) {
 
     if (select(max_fd + 1, &readset, &writeset, NULL, NULL) < 0) {
       perror("chatServer -- can't select");
+      closeTLS();
       exit(1);
     }
 
@@ -547,7 +572,7 @@ int main(int argc, char** argv) {
 
       //gnuTLS session setup
       int TLSfail = 0;
-      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX flag might need to be GNUTLS_NONBLOCK; needs to be freed with gnutls_deinit(session)
+      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){ //FIX flag might need to be GNUTLS_NONBLOCK
         perror("directoryServer -- TLS error: failed to initialize session");
         disconnect_client(clientptr);
         TLSfail = 1;
@@ -579,7 +604,6 @@ int main(int argc, char** argv) {
         if (handshake < 0 ) {
           //disconnect Client- handshake failed
           disconnect_client(clientptr);
-          //FIX - need session_deinit
           // TLS Handshake error handling
           fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
           gnutls_datum_t out;
