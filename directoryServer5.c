@@ -16,7 +16,7 @@
 
 // Define if you DO NOT want TLS mode
 //
-#define NON_TLS_MODE = 0
+//#define NON_TLS_MODE = 0
 
 // TLS certificate files, located in /certificates
 #define KEYFILE "openssl/serverDirectoryServer.key"
@@ -165,7 +165,7 @@ void client_tx(client_t *client) {
   tx_amount = write(client->fd, client->tx, client->tx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-  tx_amount = gnutls_record_send(client->session, client->rx, client->tx_len)
+  tx_amount = gnutls_record_send(client->session, client->rx, client->tx_len);
 //#error "TLS mode has not been implemented yet!"
 #endif
 
@@ -212,6 +212,7 @@ void client_rx(client_t *client) {
 #else
 // ---------------- CONVERT ME TO TLS ----------------
   rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
+
 //#error "TLS mode has not been implemented yet!"
 #endif
 

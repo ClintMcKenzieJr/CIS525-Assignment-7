@@ -52,10 +52,19 @@ int main()
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
+	if (gnutls_server_name_set(session, GNUTLS_NAME_DNS,"DirectoryServer", sizeof("DirectoryServer") ) < 0){
+		perror("client: TLS error: failed to set server name");
+		exit(1);
+	}
 	if(gnutls_priority_set(session, priority_cache) < 0){
         perror("client: TLS error: failed priority set");
         exit(1);
     }
+
+	if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
+		perror("client: TLS error: failed credentials set");
+        exit(1);
+	}
 
 	gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
 
@@ -81,6 +90,12 @@ int main()
 	int handshake;
 	if ((handshake = gnutls_handshake(session)) < 0){
 		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		gnutls_datum_t out;
+		int type = gnutls_certificate_type_get(session);
+		unsigned status = gnutls_session_get_verify_cert_status(session);
+		gnutls_certificate_verification_status_print(status, type, &out, 0);
+		fprintf(stderr, "cert verify output: %s\n", out.data);
+		gnutls_free(out.data);
 		close(sockfd);
 		exit(1);
 	}
