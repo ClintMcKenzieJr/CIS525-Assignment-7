@@ -134,7 +134,7 @@ int main(int argc, char **argv)
 			FD_SET(currentry->fd, &readset);
 			// TODO / FIXME: Test this to make sure it works
 			//FD_SET(currentry->fd, &writeset);
-			if (&(currentry->outBuffer[MAX]) - currentry->outptr) > 0) {
+			if (&(currentry->outBuffer[MAX]) - currentry->outptr > 0) {
 				FD_SET(currentry->fd, &writeset);
 			}
 			if (maxsockfd < currentry->fd) {maxsockfd = currentry->fd;}
