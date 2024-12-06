@@ -21,7 +21,7 @@
 // TLS certificate files, located in /certificates
 #define KEYFILE "openssl/serverDirectoryServerKey.pem"
 #define CERTFILE "openssl/serverDirectoryServerCert.pem"
-#define CAFILE "openssl/rootCA.crt" //path to crt file
+#define CAFILE "openssl/rootCACert.pem" //path to crt file
 
 #define LOOP_CHECK(rval, cmd) \
 	do {                  \
