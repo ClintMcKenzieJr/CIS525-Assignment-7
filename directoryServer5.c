@@ -238,7 +238,7 @@ void client_rx(client_t *client) {
 //#error "TLS mode has not been implemented yet!"
 #endif
 
-  if (rx_amount == EWOULDBLOCK) return;
+  if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) return;
   if (rx_amount <= 0) {
     DEBUG_MSG("Failed to read from client, disconnecting them!\n");
     disconnect_client(client);
