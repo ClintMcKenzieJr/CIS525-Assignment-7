@@ -217,3 +217,11 @@ openssl x509 -req \
     -CAcreateserial -out serverDirectoryServer.crt \
     -days 365 \
     -sha256 -extfile cert.conf
+
+for file in *.crt; do
+    mv -- "$file" "${file%.crt}.pem"
+done
+
+for file in *.key; do
+    mv -- "$file" "${file%.key}.pem"
+done
