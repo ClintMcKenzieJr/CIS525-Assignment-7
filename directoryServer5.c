@@ -230,14 +230,10 @@ void client_rx(client_t *client) {
                    client->rx_cap - client->rx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-<<<<<<< HEAD
-  rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, MAX);
-=======
   assert(client->session);
   assert(client->rx);
   DEBUG_MSG("RX=%zu, LEN=%zu, CAP=%zu", client->rx, client->rx_len, client->rx_cap);
   rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
->>>>>>> 62f8a680295e33748785c0f410d1481dbc2bb230
 
 //#error "TLS mode has not been implemented yet!"
 #endif
