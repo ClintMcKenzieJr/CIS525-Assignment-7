@@ -14,6 +14,9 @@
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 
+// Prevents an unnecessary warning
+size_t strnlen(const char *s, size_t maxlen);
+
 // Define if you DO NOT want TLS mode
 //
 //#define NON_TLS_MODE = 0
@@ -21,7 +24,6 @@
 // TLS certificate files, located in /certificates
 #define KEYFILE "openssl/serverDirectoryServerKey.pem"
 #define CERTFILE "openssl/serverDirectoryServerCert.pem"
-//#define CAFILE "openssl/rootCACert.pem" //path to crt file
 
 #define LOOP_CHECK(rval, cmd) \
 	do {                  \
