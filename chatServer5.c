@@ -6,8 +6,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/queue.h>
+#include <gnutls/gnutls.h>
+#include <gnutls/x509.h>
 #include "inet.h"
 #include "common.h"
+
+// TLS certificate files, located in /certificates-- individual server key and certificate files are defined in main
+#define CAFILE "openssl/rootCACert.pem" //set file location here
+#define LOOP_CHECK(rval, cmd) \
+	do {                  \
+		rval = cmd;   \
+	} while (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED)
+int TLSflag = 1; //whether or not server is certified 
 
 // Prevents an unnecessary warning
 size_t strnlen(const char *s, size_t maxlen);
@@ -17,6 +27,7 @@ struct entry {
 	char name[MAXNAMELEN];
 	char *inptr, *outptr;
 	char inBuffer[MAX], outBuffer[MAX];
+	gnutls_session_t session; //TLS session
 	LIST_ENTRY(entry) entries;
 };
 
@@ -39,6 +50,29 @@ int main(int argc, char **argv)
 	int firstuser = 1;
 	
 
+	// TLS credential Initialization
+	char keyFile[MAX] = {'\0'};
+	char certFile[MAX] = {'\0'};
+	gnutls_session_t 	dSession;
+	gnutls_certificate_credentials_t x509_cred;
+
+	if (gnutls_global_init() < 0){ 
+		perror("chat server: TLS error: can't global init gnuTLS");
+		exit(1);
+	}
+	if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){
+		perror("chat server: TLS error: failed to allocated x509 credentials");
+		gnutls_global_deinit();
+		exit(1);
+	}
+	if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0){
+		perror("chat server: TLS error: failed to set CA file");
+		gnutls_global_deinit();
+		gnutls_certificate_free_credentials(x509_cred);
+		exit(1);
+	}
+	
+	//user input parse
 	if (argc != 3) {
 		printf("Two arguments required: topic and port\n");
 		exit(0);
@@ -82,11 +116,71 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	// initialize TLS session- this is set as Client towards directory server
+	if (gnutls_init(&dSession, GNUTLS_CLIENT) < 0) {
+		perror("chat server: TLS error: failed to initialize TLS session");
+		exit(1);
+	}
+	if(gnutls_credentials_set(dSession, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
+		perror("chat server: TLS error: failed credentials set");
+        exit(1);
+	}
+	if(gnutls_set_default_priority(dSession) < 0){
+        perror("chat server: TLS error: failed priority set");
+        exit(1);
+    }
+
+	// TLS Handshake with Directory Server
+	gnutls_transport_set_int(dSession, dirsockfd);
+	int handshake;
+	LOOP_CHECK(handshake, gnutls_handshake(dSession));
+	if (handshake < 0){
+		// TLS Handshake error handling
+		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		gnutls_datum_t out;
+		int type = gnutls_certificate_type_get(dSession);
+		unsigned status = gnutls_session_get_verify_cert_status(dSession);
+		gnutls_certificate_verification_status_print(status, type, &out, 0);
+		fprintf(stderr, "cert verify output: %s\n", out.data);
+		gnutls_free(out.data);
+		close(sockfd);
+		gnutls_global_deinit();
+		gnutls_certificate_free_credentials(x509_cred);
+		exit(1);
+	}
+	else {
+          fprintf(stderr, "chat server: Handshake completed!\n");
+    }
+
 	// Write topic and port to directory (and keep socket open so the directory knows
 	// the server is still up)
 	snprintf(outmsg, MAX, "s%s; %hu", topic, port);
-	write(dirsockfd, outmsg, MAX);
+	gnutls_record_send(dSession, outmsg, MAX);
 
+	// TLS: Setting Certified server:
+	if (0 == strncmp("Birds", topic, MAXTOPICLEN)){
+		snprintf(keyFile, MAX, "openssl/serverBirdsKey.pem");
+		snprintf(certFile, MAX, "openssl/serverBirdsCert.pem");
+	}
+	else if (0 == strncmp("Computers", topic, MAXTOPICLEN)){
+		snprintf(keyFile, MAX, "openssl/serverComputersKey.pem");
+		snprintf(certFile, MAX, "openssl/serverComputersCert.pem");
+	}
+	else if (0 == strncmp("Cool Things", topic, MAXTOPICLEN)){
+		snprintf(keyFile, MAX, "openssl/serverCoolThingsKey.pem");
+		snprintf(certFile, MAX, "openssl/serverCoolThingsCert.pem");
+	}
+	else if (0 == strncmp("Flipper Hacks", topic, MAXTOPICLEN)){
+		snprintf(keyFile, MAX, "openssl/serverFlipperHacksKey.pem");
+		snprintf(certFile, MAX, "openssl/serverFlipperHacksCert.pem");
+	}
+	else if (0 == strncmp("Food", topic, MAXTOPICLEN)){
+		snprintf(keyFile, MAX, "openssl/serverFoodKey.pem");
+		snprintf(certFile, MAX, "openssl/serverFoodCert.pem");
+	}
+	else { //server is not certifid
+		TLSflag = 0;
+	}
 
 	// Continue with normal server operations
 
@@ -160,8 +254,59 @@ int main(int argc, char **argv)
 						memset(newentry->outBuffer, '\0', MAX);
 						newentry->inptr = newentry->inBuffer;
 						newentry->outptr = newentry->outBuffer;
-						LIST_INSERT_HEAD(&clilist, newentry, entries);
 
+						
+						//gnuTLS session setup if user is verified 
+						if(!TLSflag){
+							if(gnutls_init(newentry->session, GNUTLS_SERVER) < 0){
+								perror("directoryServer -- TLS error: failed to initialize session");
+								close(newsockfd);
+								free(newentry);
+								continue;
+							}
+							if(gnutls_credentials_set(newentry->session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
+								perror("directoryServer -- TLS error: failed to set credentials");
+								close(newsockfd);
+								free(newentry);
+								continue;
+							}
+							if(gnutls_set_default_priority(newentry->session) < 0){
+								perror("directoryServer -- TLS error: failed priority set");
+								close(newsockfd);
+								free(newentry);
+								continue;
+							}
+
+							// Set up transport layer
+							gnutls_transport_set_ptr(newentry->session, (gnutls_transport_ptr_t) newsockfd);
+							gnutls_transport_set_int(newentry->session, newsockfd);
+							
+							//TLS handshake
+							int handshake;
+							LOOP_CHECK(handshake, gnutls_handshake(newentry->session));
+							if (handshake < 0 ) {
+								//handshake failed, disconnect client
+								close(newsockfd);
+								free(newentry);
+
+								// TLS Handshake error handling
+								fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+								gnutls_datum_t out;
+								int type = gnutls_certificate_type_get(newentry->session);
+								unsigned status = gnutls_session_get_verify_cert_status(newentry->session);
+								gnutls_certificate_verification_status_print(status, type, &out, 0);
+								fprintf(stderr, "cert verify output: %s\n", out.data);
+								gnutls_free(out.data);
+
+								continue;
+							}
+							else { //successful handshake connection! add Client to list and begin communication
+								fprintf(stderr, "chat Server: Handshake completed!\n");
+							}
+							
+						
+						}
+						LIST_INSERT_HEAD(&clilist, newentry, entries);
 						snprintf(newentry->outBuffer, MAX, "Please input a username (max ten chars):");
 					}
 				}
@@ -220,7 +365,7 @@ int main(int argc, char **argv)
 						// Reset client's buffer and pointer
 						memset(currentry->inBuffer, '\0', MAX);
 						currentry->inptr = currentry->inBuffer;
-					} else if (j == -1) {
+					} else if (j == -1) { //FIX -- close TLS here
 						// Close socket, free entry, remove from list
 						close(currentry->fd);
 						if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
@@ -241,27 +386,47 @@ int main(int argc, char **argv)
 				e2 = LIST_NEXT(currentry, entries);
 				if (FD_ISSET(currentry->fd, &writeset) && ((k = &(currentry->outBuffer[MAX]) - currentry->outptr) > 0)) {
 					// Send message
-					if ((nwritten = write(currentry->fd, currentry->outptr, k)) < 0) {
-						if (errno != EWOULDBLOCK && errno != EAGAIN) {
-							perror("server: write error on client socket");
-							// Close socket, free entry, remove from list
-							close(currentry->fd);
-							if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
-								snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
-								setoutmsgs(&clilist, currentry, outmsg);
+					if(!TLSflag) { //non TLS write
+						if ((nwritten = write(currentry->fd, currentry->outptr, k)) < 0) {
+							if (errno != EWOULDBLOCK && errno != EAGAIN) {
+								perror("server: write error on client socket");
+								// Close socket, free entry, remove from list
+								close(currentry->fd);
+								if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
+									snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
+									setoutmsgs(&clilist, currentry, outmsg);
+								}
+								LIST_REMOVE(currentry, entries);
+								free(currentry);
 							}
-							LIST_REMOVE(currentry, entries);
-							free(currentry);
+						} else {
+							currentry->outptr += nwritten;
 						}
-					} else {
-						currentry->outptr += nwritten;
+					}
+					else { //TLS write
+						if ((nwritten = gnutls_record_send(currentry->fd, currentry->outptr, k)) < 0) {
+							if (errno != GNUTLS_E_INTERRUPTED && errno != GNUTLS_E_AGAIN) {
+								perror("server: write error on client socket");
+								// Close socket, free entry, remove from list
+								//FIX --add TLS memory cleanup
+								close(currentry->fd);
+								if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
+									snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
+									setoutmsgs(&clilist, currentry, outmsg);
+								}
+								LIST_REMOVE(currentry, entries);
+								free(currentry);
+							}
+						} else {
+							currentry->outptr += nwritten;
+						}
 					}
 				}
 				currentry = e2;
 			}
 		} /* end of if select */
 	} /* end of infinite for loop */
-
+	//FIX-- Add TLS memory clean up here
 	close(sockfd);
 
 	//return or exit(0) is implied; no need to do anything because main() ends
@@ -271,13 +436,24 @@ int main(int argc, char **argv)
 // Returns 1 on reading full message, 0 on partial read, and -1 on read failure or closed connection
 int nonblockread(struct entry *e) {
 	int nread = 0;
-	if ((nread = read(e->fd, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
-		if (errno == EWOULDBLOCK || errno == EAGAIN) {
+	if(!TLSflag){ //non TLS read
+		if ((nread = read(e->fd, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
+			if (errno == EWOULDBLOCK || errno == EAGAIN) {
+				return 0; // msg not fully received; shouldn't happen, but best to be safe
+			}
+			fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
+			return -1;
+		}
+	}
+	else { //TLS read
+		nread = gnutls_record_recv(e->fd, e->inptr, &e->inBuffer[MAX] - e->inptr);
+		if (errno == GNUTLS_E_INTERRUPTED || GNUTLS_E_AGAIN) {
 			return 0; // msg not fully received; shouldn't happen, but best to be safe
 		}
 		fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
 		return -1;
-	} else if (nread > 0) {
+	}
+	if (nread > 0) {
 		e->inptr += nread;
 		// Need to check if msg fully received
 		// Client always writes MAX

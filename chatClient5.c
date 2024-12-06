@@ -41,10 +41,13 @@ int main()
 	}
 	if (gnutls_certificate_allocate_credentials(&x509_cred) < 0){
 		perror("client: TLS error: failed to allocated x509 credentials");
+		gnutls_global_deinit();
 		exit(1);
 	}
 	if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0){
 		perror("client: TLS error: failed to set CA file");
+		gnutls_global_deinit();
+		gnutls_certificate_free_credentials(x509_cred);
 		exit(1);
 	}
 
@@ -94,6 +97,8 @@ int main()
 		fprintf(stderr, "cert verify output: %s\n", out.data);
 		gnutls_free(out.data);
 		close(sockfd);
+		gnutls_global_deinit();
+		gnutls_certificate_free_credentials(x509_cred);
 		exit(1);
 	}
 	else {
@@ -137,7 +142,9 @@ int main()
 			printf("Input parsing failed, closing client\n");
 			exit(1);
 		}
+		gnutls_bye(session, GNUTLS_SHUT_RDWR);
 		close(sockfd);
+		gnutls_deinit(session);
 	}
 
 
@@ -162,12 +169,27 @@ int main()
 		exit(1);
 	}
 
+	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) {
+		perror("client: TLS error: failed to initialize TLS session");
+		exit(1);
+	}
+
+	if(gnutls_set_default_priority(session) < 0){
+        perror("client: TLS error: failed priority set");
+        exit(1);
+    }
+
 	// TLS Handshake with chat Server
 	gnutls_transport_set_int(session, sockfd);
 	if ((handshake = gnutls_handshake(session)) < 0){
 		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		close(sockfd);
+		gnutls_global_deinit();
+		gnutls_certificate_free_credentials(x509_cred);
 		exit(1);
+	}
+	else {
+		fprintf(stderr, "chat client: Handshake completed!\n");
 	}
 
 	for(;;) {
@@ -207,6 +229,7 @@ int main()
 			}
 		}
 	}
+	gnutls_bye(session, GNUTLS_SHUT_RDWR);
 	close(sockfd);
 	gnutls_certificate_free_credentials(x509_cred);
 	gnutls_deinit(session);

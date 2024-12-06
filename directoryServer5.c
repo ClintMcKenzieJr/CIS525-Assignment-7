@@ -19,7 +19,7 @@ size_t strnlen(const char *s, size_t maxlen);
 
 // Define if you DO NOT want TLS mode
 //
-//#define NON_TLS_MODE = 0
+//#define NON_TLS_MODE
 
 // TLS certificate files, located in /certificates
 #define KEYFILE "openssl/serverDirectoryServerKey.pem"
@@ -230,7 +230,7 @@ void client_rx(client_t *client) {
                    client->rx_cap - client->rx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-  rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
+  rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, MAX);
 
 //#error "TLS mode has not been implemented yet!"
 #endif
