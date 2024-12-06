@@ -5,14 +5,14 @@ openssl req -x509 \
     -nodes \
     -newkey rsa:2048 \
     -subj "/CN=rootCA/C=US/L=Manhattan" \
-    -keyout rootCA.key -out rootCA.crt 
+    -keyout rootCAKey.pem -out rootCACert.pem 
 
-openssl genrsa -out serverBirds.key 2048
-openssl genrsa -out serverComputers.key 2048
-openssl genrsa -out serverFood.key 2048
-openssl genrsa -out serverCoolThings.key 2048
-openssl genrsa -out serverFlipperHacks.key 2048
-openssl genrsa -out serverDirectoryServer.key 2048
+openssl genrsa -out serverBirdsKey.pem 2048
+openssl genrsa -out serverComputersKey.pem 2048
+openssl genrsa -out serverFoodKey.pem 2048
+openssl genrsa -out serverCoolThingsKey.pem 2048
+openssl genrsa -out serverFlipperHacksKey.pem 2048
+openssl genrsa -out serverDirectoryServerKey.pem 2048
 
 
 cat > csrBirds.conf <<EOF
@@ -159,12 +159,12 @@ IP.1 = 192.168.1.5
 IP.2 = 192.168.1.6
 EOF
 
-openssl req -new -key serverBirds.key -out serverBirds.csr -config csrBirds.conf
-openssl req -new -key serverComputers.key -out serverComputers.csr -config csrComputers.conf
-openssl req -new -key serverFood.key -out serverFood.csr -config csrFood.conf
-openssl req -new -key serverCoolThings.key -out serverCoolThings.csr -config csrCoolThings.conf
-openssl req -new -key serverFlipperHacks.key -out serverFlipperHacks.csr -config csrFlipperHacks.conf
-openssl req -new -key serverDirectoryServer.key -out serverDirectoryServer.csr -config csrDirectoryServer.conf
+openssl req -new -key serverBirdsKey.pem -out serverBirds.csr -config csrBirds.conf
+openssl req -new -key serverComputersKey.pem -out serverComputers.csr -config csrComputers.conf
+openssl req -new -key serverFoodKey.pem -out serverFood.csr -config csrFood.conf
+openssl req -new -key serverCoolThingsKey.pem -out serverCoolThings.csr -config csrCoolThings.conf
+openssl req -new -key serverFlipperHacksKey.pem -out serverFlipperHacks.csr -config csrFlipperHacks.conf
+openssl req -new -key serverDirectoryServerKey.pem -out serverDirectoryServer.csr -config csrDirectoryServer.conf
 
 cat > cert.conf <<EOF
 authorityKeyIdentifier=keyid,issuer
@@ -178,42 +178,42 @@ EOF
 
 openssl x509 -req \
     -in serverBirds.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverBirds.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverBirdsCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf
 
 openssl x509 -req \
     -in serverComputers.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverComputers.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverComputersCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf
 
 openssl x509 -req \
     -in serverFood.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverFood.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverFoodCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf
 
 openssl x509 -req \
     -in serverCoolThings.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverCoolThings.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverCoolThingsCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf
 
 openssl x509 -req \
     -in serverFlipperHacks.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverFlipperHacks.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverFlipperHacksCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf
 
 openssl x509 -req \
     -in serverDirectoryServer.csr \
-    -CA rootCA.crt -CAkey rootCA.key \
-    -CAcreateserial -out serverDirectoryServer.crt \
+    -CA rootCACert.pem -CAkey rootCAKey.pem \
+    -CAcreateserial -out serverDirectoryServerCert.pem \
     -days 365 \
     -sha256 -extfile cert.conf

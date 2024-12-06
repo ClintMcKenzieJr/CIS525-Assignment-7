@@ -19,15 +19,15 @@
 //#define NON_TLS_MODE = 0
 
 // TLS certificate files, located in /certificates
-#define KEYFILE "openssl/serverDirectoryServer.key"
-#define CERTFILE "openssl/serverDirectoryServer.crt"
+#define KEYFILE "openssl/serverDirectoryServerKey.pem"
+#define CERTFILE "openssl/serverDirectoryServerCert.pem"
 #define CAFILE "openssl/rootCA.crt" //path to crt file
 
 #define LOOP_CHECK(rval, cmd) \
 	do {                  \
 		rval = cmd;   \
 	} while (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED)
-#define CRLFILE "FIX" //FIX need to implement
+//#define CRLFILE "FIX" //FIX need to implement
 gnutls_certificate_credentials_t x509_cred;
 gnutls_priority_t priority_cache;
 
@@ -588,11 +588,11 @@ int main(int argc, char** argv) {
         TLSfail = 1;
       }
       //FIX TLS CRL set-- may or may not be needed
-      if (gnutls_certificate_set_x509_crl_file(x509_cred, CRLFILE, GNUTLS_X509_FMT_PEM) < 0) {
+      /*if (gnutls_certificate_set_x509_crl_file(x509_cred, CRLFILE, GNUTLS_X509_FMT_PEM) < 0) {
         perror("directoryServer -- TLS error: failed to set CRL file");
         disconnect_client(clientptr);
         TLSfail = 1;
-      }
+      }*/
 
       if (!TLSfail) {
         // Set up transport layer -- pg 178

@@ -10,7 +10,7 @@
 #include "common.h"
 
 // TLS certificate files, located in /certificates
-#define CAFILE "openssl/rootCA.crt" //set file location here
+#define CAFILE "openssl/rootCACert.pem" //set file location here
 
 // Prevents an unnecessary warning
 size_t strnlen(const char *s, size_t maxlen);
