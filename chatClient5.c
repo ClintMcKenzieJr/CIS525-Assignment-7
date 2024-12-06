@@ -112,7 +112,7 @@ int main()
 
 	// Read server list
 	if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
-		perror("Error reading from directory");
+		perror("Error reading server list from directory server");
 		exit(1);
 	} else if (nread == 0) {
 		printf("Directory disconnected, shutting down client\n");
@@ -131,7 +131,7 @@ int main()
 
 	// Read server connection info
 	if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
-		printf("Error reading from directory\n");
+		printf("Error reading server connection info from directory server\n");
 		exit(1);
 	} else if (nread == 0) {
 		printf("Directory disconnected, shutting down client\n");
