@@ -128,8 +128,6 @@ void free_client(client_t *client) {
   if (client->rx) free(client->rx);
   if (client->tx) free(client->tx);
   if (client->topic) free(client->topic);
-  //TLS deinit
-  gnutls_deinit(client->session);
 
   // This is a saftey thing, we cannot double free
   // pointers if we entirely forget what they were
@@ -162,7 +160,7 @@ void client_tx(client_t *client) {
 
   // If we are disconnecting the client, and have nothing
   // else to send, we finally disconnect the client.
-  if (client->disconnect && !client->tx_len) {
+  if (client->disconnect) {
     // Close their socket!
     gnutls_bye(client->session, GNUTLS_SHUT_RDWR);
     close(client->fd);
@@ -238,8 +236,18 @@ void client_rx(client_t *client) {
 //#error "TLS mode has not been implemented yet!"
 #endif
 
-  if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) return;
+  if (!rx_amount) {
+    DEBUG_MSG("Failed to read from client, disconnecting them!\n");
+    disconnect_client(client);
+    return;
+  }
+
   if (rx_amount <= 0) {
+    DEBUG_MSG("Errno %d\n", errno);
+    if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
+      return;
+    }
+
     DEBUG_MSG("Failed to read from client, disconnecting them!\n");
     disconnect_client(client);
     return;
@@ -619,7 +627,6 @@ int main(int argc, char** argv) {
      
     }
 
-    DEBUG_MSG("len = %zu\n", clients_len);
     for (int i = 0; i < clients_len; i++) {
       client_t *client = &clients[i];
 
