@@ -29,14 +29,14 @@
 	} while (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED)
 //#define CRLFILE "FIX" //FIX need to implement
 gnutls_certificate_credentials_t x509_cred;
-gnutls_priority_t priority_cache;
+//gnutls_priority_t priority_cache;
 
 //frees all allocated memory for TLS by calling corrosponding gnuTLS functions
 //Note that session de-initializization is handled when client is freed
 void closeTLS(){
   gnutls_global_deinit();
   gnutls_certificate_free_credentials(x509_cred);
-  gnutls_priority_deinit(priority_cache);
+  //gnutls_priority_deinit(priority_cache);
 }
 
 // Kind of client
@@ -165,6 +165,7 @@ void client_tx(client_t *client) {
   // else to send, we finally disconnect the client.
   if (client->disconnect && !client->tx_len) {
     // Close their socket!
+    gnutls_bye(client->session, GNUTLS_SHUT_RDWR);
     close(client->fd);
 
     client->fd = 0;
@@ -459,24 +460,25 @@ int main(int argc, char** argv) {
     gnutls_global_deinit();
     exit(1);
   }
-  if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0) {
-    perror("directoryServer -- TLS error: can't set trust file");
-    gnutls_global_deinit();
-    gnutls_certificate_free_credentials(x509_cred);
-    exit(1);
-  }
   if (gnutls_certificate_set_x509_key_file(x509_cred, CERTFILE, KEYFILE, GNUTLS_X509_FMT_PEM) < 0){ //pg 169
     perror("directoryServer -- TLS error: can't set certificate");
     gnutls_global_deinit();
     gnutls_certificate_free_credentials(x509_cred);
     exit(1);
   }
-  if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){
+  /*if (gnutls_certificate_set_x509_trust_file(x509_cred, CAFILE, GNUTLS_X509_FMT_PEM) < 0) {
+    perror("directoryServer -- TLS error: can't set trust file");
+    gnutls_global_deinit();
+    gnutls_certificate_free_credentials(x509_cred);
+    exit(1);
+  }*/
+  
+  /*if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){
     perror("directoryServer -- TLS error: can't initialize priority cache");
     gnutls_global_deinit();
     gnutls_certificate_free_credentials(x509_cred);
     exit(1);
-  }
+  }*/
 
   // 1. Create communication endpoint
   int serverfd;
@@ -577,16 +579,26 @@ int main(int argc, char** argv) {
         disconnect_client(clientptr);
         TLSfail = 1;
       }
-      if(gnutls_priority_set(client.session, priority_cache) < 0){
+      /*if(gnutls_priority_set(client.session, priority_cache) < 0){
         perror("directoryServer -- TLS error: failed priority set");
         disconnect_client(clientptr);
         TLSfail = 1;
-      }
+      }*/
       if(gnutls_credentials_set(client.session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
         perror("directoryServer -- TLS error: failed to set credentials");
         disconnect_client(clientptr);
         TLSfail = 1;
       }
+      if(gnutls_set_default_priority(client.session) < 0){
+        perror("directoryServer -- TLS error: failed priority set");
+        disconnect_client(clientptr);
+        TLSfail = 1;
+      }
+      //Sets one way handshake
+      //gnutls_certificate_server_set_request(client.session, GNUTLS_CERT_IGNORE);
+      //sets time-out
+      //gnutls_handshake_set_timeout(client.session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
+
       //FIX TLS CRL set-- may or may not be needed
       /*if (gnutls_certificate_set_x509_crl_file(x509_cred, CRLFILE, GNUTLS_X509_FMT_PEM) < 0) {
         perror("directoryServer -- TLS error: failed to set CRL file");
@@ -596,6 +608,8 @@ int main(int argc, char** argv) {
 
       if (!TLSfail) {
         // Set up transport layer -- pg 178
+        gnutls_transport_set_ptr(client.session, (gnutls_transport_ptr_t) newsockfd);
+
         gnutls_transport_set_int(client.session, newsockfd);
         
         //TLS handshake

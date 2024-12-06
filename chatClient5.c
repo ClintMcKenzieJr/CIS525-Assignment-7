@@ -11,6 +11,10 @@
 
 // TLS certificate files, located in /certificates
 #define CAFILE "openssl/rootCACert.pem" //set file location here
+#define LOOP_CHECK(rval, cmd) \
+	do {                  \
+		rval = cmd;   \
+	} while (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED)
 
 // Prevents an unnecessary warning
 size_t strnlen(const char *s, size_t maxlen);
@@ -25,7 +29,7 @@ int main()
 	size_t				msglen;
 	unsigned short port;
 	unsigned long ip_addr;
-	gnutls_priority_t priority_cache;
+	//gnutls_priority_t priority_cache;
 	
 	// TLS Initialization
 	gnutls_session_t 	session;
@@ -43,30 +47,13 @@ int main()
 		perror("client: TLS error: failed to set CA file");
 		exit(1);
 	}
-	if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
+	/*if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
 		perror("client: TLS error: can't initialize priority cache");
 		exit(1);
-	}
-	// initialize TLS session
-	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) {
-		perror("client: TLS error: failed to initialize TLS session");
-		exit(1);
-	}
-	if (gnutls_server_name_set(session, GNUTLS_NAME_DNS,"DirectoryServer", sizeof("DirectoryServer") ) < 0){
-		perror("client: TLS error: failed to set server name");
-		exit(1);
-	}
-	if(gnutls_priority_set(session, priority_cache) < 0){
-        perror("client: TLS error: failed priority set");
-        exit(1);
-    }
+	}*/
+	
 
-	if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
-		perror("client: TLS error: failed credentials set");
-        exit(1);
-	}
-
-	gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
+	//gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
 
 	/* Set up the address of the directory to be contacted. */
 	memset((char *) &dir_addr, 0, sizeof(dir_addr));
@@ -85,10 +72,30 @@ int main()
 		exit(1);
 	}
 
+	// initialize TLS session
+	if (gnutls_init(&session, GNUTLS_CLIENT) < 0) {
+		perror("client: TLS error: failed to initialize TLS session");
+		exit(1);
+	}
+	/*if (gnutls_server_name_set(session, GNUTLS_NAME_DNS,"DirectoryServer", sizeof("DirectoryServer") ) < 0){
+		perror("client: TLS error: failed to set server name");
+		exit(1);
+	}*/
+	if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
+		perror("client: TLS error: failed credentials set");
+        exit(1);
+	}
+	if(gnutls_set_default_priority(session) < 0){
+        perror("client: TLS error: failed priority set");
+        exit(1);
+    }
+
+
 	// TLS Handshake with Directory Server
 	gnutls_transport_set_int(session, sockfd);
 	int handshake;
-	if ((handshake = gnutls_handshake(session)) < 0){
+	LOOP_CHECK(handshake, gnutls_handshake(session));
+	if (handshake < 0){
 		// TLS Handshake error handling
 		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		gnutls_datum_t out;
