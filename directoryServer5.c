@@ -587,8 +587,6 @@ int main(int argc, char** argv) {
         continue;
       } else{
         // Set up transport layer -- pg 178
-        gnutls_transport_set_ptr(client.session, (gnutls_transport_ptr_t) newsockfd);
-
         gnutls_transport_set_int(client.session, newsockfd);
         
         //TLS handshake

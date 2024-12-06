@@ -278,10 +278,9 @@ int main(int argc, char **argv)
 							}
 
 							// Set up transport layer
-							gnutls_transport_set_ptr(newentry->session, (gnutls_transport_ptr_t) newsockfd);
 							gnutls_transport_set_int(newentry->session, newsockfd);
 							
-							//TLS handshake
+							//TLS handshake with client
 							int handshake;
 							LOOP_CHECK(handshake, gnutls_handshake(newentry->session));
 							if (handshake < 0 ) {
@@ -404,7 +403,7 @@ int main(int argc, char **argv)
 						}
 					}
 					else { //TLS write
-						if ((nwritten = gnutls_record_send(currentry->fd, currentry->outptr, k)) < 0) {
+						if ((nwritten = gnutls_record_send(currentry->session, currentry->outptr, k)) < 0) {
 							if (errno != GNUTLS_E_INTERRUPTED && errno != GNUTLS_E_AGAIN) {
 								perror("server: write error on client socket");
 								// Close socket, free entry, remove from list
@@ -446,8 +445,8 @@ int nonblockread(struct entry *e) {
 		}
 	}
 	else { //TLS read
-		nread = gnutls_record_recv(e->fd, e->inptr, &e->inBuffer[MAX] - e->inptr);
-		if (errno == GNUTLS_E_INTERRUPTED || GNUTLS_E_AGAIN) {
+		nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr);
+		if (errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
 			return 0; // msg not fully received; shouldn't happen, but best to be safe
 		}
 		fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
