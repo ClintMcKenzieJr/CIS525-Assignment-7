@@ -143,7 +143,7 @@ int main(int argc, char **argv)
 		gnutls_certificate_verification_status_print(status, type, &out, 0);
 		fprintf(stderr, "cert verify output: %s\n", out.data);
 		gnutls_free(out.data);
-		close(sockfd);
+		close(dirsockfd);
 		gnutls_global_deinit();
 		gnutls_certificate_free_credentials(x509_cred);
 		exit(1);
