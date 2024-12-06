@@ -107,6 +107,9 @@ int main()
 		close(sockfd);
 		exit(1);
 	}
+	else {
+          fprintf(stderr, "chat client: Handshake completed!\n");
+    }
 
 	// Request servers, wait to read, then wait for input, then write and wait to read
 	// Request server list
