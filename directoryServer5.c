@@ -602,8 +602,6 @@ int main(int argc, char** argv) {
         }
         else { //Successful TLS handshake
           fprintf(stderr, "directory Server: Handshake completed!\n");
-          // Put the client into the array
-          clients[clients_len++] = client;
 
           // Need to expand the array
           if (clients_len >= clients_cap) {
@@ -612,12 +610,16 @@ int main(int argc, char** argv) {
 
             assert(clients);
           }
+
+          // Put the client into the array
+          clients[clients_len++] = client;
         }
       }
 
      
     }
 
+    DEBUG_MSG("len = %zu\n", clients_len);
     for (int i = 0; i < clients_len; i++) {
       client_t *client = &clients[i];
 
