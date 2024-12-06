@@ -47,13 +47,6 @@ int main()
 		perror("client: TLS error: failed to set CA file");
 		exit(1);
 	}
-	/*if (gnutls_priority_init(&priority_cache, NULL, NULL) < 0){ //FIX needs to be freed with gnutls_priority_deinit(priority_cache);
-		perror("client: TLS error: can't initialize priority cache");
-		exit(1);
-	}*/
-	
-
-	//gnutls_session_set_verify_cert(session, "DirectoryServer", 0); //pg 173
 
 	/* Set up the address of the directory to be contacted. */
 	memset((char *) &dir_addr, 0, sizeof(dir_addr));
@@ -77,10 +70,6 @@ int main()
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
-	/*if (gnutls_server_name_set(session, GNUTLS_NAME_DNS,"DirectoryServer", sizeof("DirectoryServer") ) < 0){
-		perror("client: TLS error: failed to set server name");
-		exit(1);
-	}*/
 	if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
 		perror("client: TLS error: failed credentials set");
         exit(1);
