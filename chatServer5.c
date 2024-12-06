@@ -132,7 +132,11 @@ int main(int argc, char **argv)
 
 		LIST_FOREACH(currentry, &clilist, entries) {
 			FD_SET(currentry->fd, &readset);
-			FD_SET(currentry->fd, &writeset);
+			// TODO / FIXME: Test this to make sure it works
+			//FD_SET(currentry->fd, &writeset);
+			if (&(currentry->outBuffer[MAX]) - currentry->outptr > 0) {
+				FD_SET(currentry->fd, &writeset);
+			}
 			if (maxsockfd < currentry->fd) {maxsockfd = currentry->fd;}
 		}
 
