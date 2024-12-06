@@ -176,7 +176,7 @@ void client_tx(client_t *client) {
     return;
 
   DEBUG_MSG("TX -- ");
-  DEBUG_DIRTY_MSG(client->rx, client->rx_len);
+  DEBUG_DIRTY_MSG(client->tx, client->tx_len);
 
   int tx_amount;
 
@@ -184,7 +184,7 @@ void client_tx(client_t *client) {
   tx_amount = write(client->fd, client->tx, client->tx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
-  tx_amount = gnutls_record_send(client->session, client->rx, client->tx_len);
+  tx_amount = gnutls_record_send(client->session, client->tx, client->tx_len);
 //#error "TLS mode has not been implemented yet!"
 #endif
 
@@ -232,7 +232,7 @@ void client_rx(client_t *client) {
 // ---------------- CONVERT ME TO TLS ----------------
   assert(client->session);
   assert(client->rx);
-  DEBUG_MSG("RX=%zu, LEN=%zu, CAP=%zu", client->rx, client->rx_len, client->rx_cap);
+  DEBUG_MSG("RX=%zu, LEN=%zu, CAP=%zu\n", client->rx, client->rx_len, client->rx_cap);
   rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
 
 //#error "TLS mode has not been implemented yet!"
@@ -649,6 +649,8 @@ int main(int argc, char** argv) {
     // This can be done in the main loop, but its much eaiser to
     // verify the soundness of the above loop without this. That is
     // why it is moved to another loop.
+    assert(clients);
+
     for (int i = 0; i < clients_len; i++) {
       client_t *client = &clients[i];
 
@@ -694,6 +696,8 @@ int main(int argc, char** argv) {
       clients_len--;
 
       memmove(dest, src, count);
+
+      i--;
     }
   }
 }
