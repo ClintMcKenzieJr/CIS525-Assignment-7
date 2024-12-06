@@ -230,6 +230,9 @@ void client_rx(client_t *client) {
                    client->rx_cap - client->rx_len);
 #else
 // ---------------- CONVERT ME TO TLS ----------------
+  assert(client->session);
+  assert(client->rx);
+  DEBUG_MSG("RX=%zu, LEN=%zu, CAP=%zu", client->rx, client->rx_len, client->rx_cap);
   rx_amount = gnutls_record_recv(client->session, client->rx + client->rx_len, client->rx_cap - client->rx_len);
 
 //#error "TLS mode has not been implemented yet!"
@@ -560,17 +563,17 @@ int main(int argc, char** argv) {
 
       //gnuTLS session setup
       int TLSfail = 0;
-      if(gnutls_init(&client.session, GNUTLS_SERVER) < 0){
+      if(gnutls_init(&clientptr->session, GNUTLS_SERVER) < 0){
         perror("directoryServer -- TLS error: failed to initialize session");
         disconnect_client(clientptr);
         TLSfail = 1;
       }
-      if(gnutls_credentials_set(client.session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
+      if(gnutls_credentials_set(clientptr->session, GNUTLS_CRD_CERTIFICATE, x509_cred) < 0){
         perror("directoryServer -- TLS error: failed to set credentials");
         disconnect_client(clientptr);
         TLSfail = 1;
       }
-      if(gnutls_set_default_priority(client.session) < 0){
+      if(gnutls_set_default_priority(clientptr->session) < 0){
         perror("directoryServer -- TLS error: failed priority set");
         disconnect_client(clientptr);
         TLSfail = 1;
@@ -578,21 +581,21 @@ int main(int argc, char** argv) {
 
       if (!TLSfail) {
         // Set up transport layer -- pg 178
-        gnutls_transport_set_ptr(client.session, (gnutls_transport_ptr_t) newsockfd);
+        gnutls_transport_set_ptr(clientptr->session, (gnutls_transport_ptr_t) newsockfd);
 
-        gnutls_transport_set_int(client.session, newsockfd);
+        gnutls_transport_set_int(clientptr->session, newsockfd);
         
         //TLS handshake
         int handshake;
-        LOOP_CHECK(handshake, gnutls_handshake(client.session));
+        LOOP_CHECK(handshake, gnutls_handshake(clientptr->session));
         if (handshake < 0 ) {
           //disconnect Client- handshake failed
           disconnect_client(clientptr);
           // TLS Handshake error handling
           fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
           gnutls_datum_t out;
-          int type = gnutls_certificate_type_get(client.session);
-          unsigned status = gnutls_session_get_verify_cert_status(client.session);
+          int type = gnutls_certificate_type_get(clientptr->session);
+          unsigned status = gnutls_session_get_verify_cert_status(clientptr->session);
           gnutls_certificate_verification_status_print(status, type, &out, 0);
           fprintf(stderr, "cert verify output: %s\n", out.data);
           gnutls_free(out.data);
