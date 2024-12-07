@@ -459,6 +459,9 @@ int nonblockread(struct entry *e) {
 	}
 	else { //TLS read
 		if ((nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
+			if (nread == -10) {
+				return -1; // Client disconnected, for WHATEVER REASON nread gets set to -10 instead of -1, DON'T ASK ME WHY
+			}
 			if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
 				return 0; // msg not fully received; shouldn't happen, but best to be safe
 			}
