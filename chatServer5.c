@@ -377,7 +377,9 @@ int main(int argc, char **argv)
 						currentry->inptr = currentry->inBuffer;
 					} else if (j == -1) { //FIX -- close TLS here
 						// Close socket, free entry, remove from list
+						gnutls_bye(currentry->session, GNUTLS_SHUT_RDWR);
 						close(currentry->fd);
+						gnutls_deinit(currentry->session);
 						if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
 							snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
 							setoutmsgs(&clilist, currentry, outmsg);
@@ -457,6 +459,9 @@ int nonblockread(struct entry *e) {
 	}
 	else { //TLS read
 		if ((nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
+			if (nread == -10) {
+				return -1; // Client disconnected, for WHATEVER REASON nread gets set to -10 instead of -1, DON'T ASK ME WHY
+			}
 			if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
 				return 0; // msg not fully received; shouldn't happen, but best to be safe
 			}
