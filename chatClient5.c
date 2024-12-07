@@ -173,7 +173,10 @@ int main()
 		perror("client: TLS error: failed to initialize TLS session");
 		exit(1);
 	}
-
+	if(gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, x509_cred)<0 ){
+		perror("client: TLS error: failed credentials set");
+        exit(1);
+	}
 	if(gnutls_set_default_priority(session) < 0){
         perror("client: TLS error: failed priority set");
         exit(1);
@@ -181,6 +184,7 @@ int main()
 
 	// TLS Handshake with chat Server
 	gnutls_transport_set_int(session, sockfd);
+
 	if ((handshake = gnutls_handshake(session)) < 0){
 		fprintf(stderr, "%s:%d Server Handshake failed: %d:%s\n", __FILE__, __LINE__, handshake, gnutls_strerror(handshake));
 		close(sockfd);
