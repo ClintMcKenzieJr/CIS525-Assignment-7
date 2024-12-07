@@ -51,10 +51,10 @@ int main(int argc, char **argv)
 	
 
 	// TLS credential Initialization
-	char keyFile[MAX] = {'\0'};
-	char certFile[MAX] = {'\0'};
 	gnutls_session_t 	dSession;
 	gnutls_certificate_credentials_t x509_cred;
+	char keyFile[MAX] = {'\0'};
+	char certFile[MAX] = {'\0'};
 
 	if (gnutls_global_init() < 0){ 
 		perror("chat server: TLS error: can't global init gnuTLS");
@@ -181,6 +181,17 @@ int main(int argc, char **argv)
 	else { //server is not certifid
 		TLSflag = 0;
 	}
+
+	if(TLSflag){ //Set key and cert file
+		if (gnutls_certificate_set_x509_key_file(x509_cred, certFile, keyFile, GNUTLS_X509_FMT_PEM) < 0){ //pg 169
+			perror("directoryServer -- TLS error: can't set certificate");
+			gnutls_global_deinit();
+			gnutls_certificate_free_credentials(x509_cred);
+			exit(1);
+  		}
+
+	}
+	
 
 	// Continue with normal server operations
 
