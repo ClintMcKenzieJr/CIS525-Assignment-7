@@ -48,6 +48,7 @@ int main(int argc, char **argv)
 	struct listhead clilist;
 	struct entry *currentry, *e2;
 	int firstuser = 1;
+	int numClients = 0;
 	
 
 	// TLS credential Initialization
@@ -253,6 +254,10 @@ int main(int argc, char **argv)
 				if (newsockfd < 0) {
 					perror("server: accept error");
 				} else {
+					if (numClients >= 5) {
+						printf("Too many clients, closing socket\n");
+						close(newsockfd);
+					}
 					if (fcntl(newsockfd, F_SETFL, O_NONBLOCK) != 0 ) {
 						perror("server: couldn't set new client socket to nonblocking");
 						close(newsockfd);
@@ -312,6 +317,7 @@ int main(int argc, char **argv)
 							}
 							else { //successful handshake connection! add Client to list and begin communication
 								fprintf(stderr, "chat Server: Client Handshake completed!\n");
+								numClients = numClients + 1;
 							}
 							
 						
@@ -384,6 +390,7 @@ int main(int argc, char **argv)
 						}
 						LIST_REMOVE(currentry, entries);
 						free(currentry);
+						numClients = numClients - 1;
 					}
 					// Do nothing on partial read
 				}
@@ -408,6 +415,7 @@ int main(int argc, char **argv)
 								}
 								LIST_REMOVE(currentry, entries);
 								free(currentry);
+								numClients = numClients - 1;
 							}
 						} else {
 							currentry->outptr += nwritten;
@@ -426,6 +434,7 @@ int main(int argc, char **argv)
 								}
 								LIST_REMOVE(currentry, entries);
 								free(currentry);
+								numClients = numClients - 1;
 							}
 						} else {
 							currentry->outptr += nwritten;
