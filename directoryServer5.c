@@ -612,13 +612,16 @@ int main(int argc, char** argv) {
           // Need to expand the array
           if (clients_len >= clients_cap) {
             clients_cap *= 2;
-            clients = reallocarray(clients, clients_cap, sizeof(client_t));
+
+            clients = realloc(clients, clients_cap * sizeof(client_t));
 
             assert(clients);
           }
 
+          DEBUG_MSG("len = %zu\n", clients_len);
           // Put the client into the array
-          clients[clients_len++] = client;
+          clients[clients_len] = client;
+          clients_len++;
         }
       }
 
