@@ -111,6 +111,7 @@ int main()
 	gnutls_record_send(session, s, MAX);
 
 	// Read server list
+	memset(s, '\0', MAX);
 	if ((nread = gnutls_record_recv(session, s, MAX)) < 0) {
 		perror("Error reading server list from directory server");
 		exit(1);

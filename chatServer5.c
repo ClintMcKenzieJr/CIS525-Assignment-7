@@ -239,7 +239,7 @@ int main(int argc, char **argv)
 		maxsockfd = sockfd;
 
 		LIST_FOREACH(currentry, &clilist, entries) {
-			if (handshook) {
+			if (currentry->handshook) {
 				FD_SET(currentry->fd, &readset);
 				// TODO / FIXME: Test this to make sure it works
 				//FD_SET(currentry->fd, &writeset);
@@ -249,23 +249,24 @@ int main(int argc, char **argv)
 				if (maxsockfd < currentry->fd) {maxsockfd = currentry->fd;}
 			} else {
 				//TLS handshake with client
-				int handshake;
 				//LOOP_CHECK(handshake, gnutls_handshake(newentry->session));
-				handshake = gnutls_handshake(newentry->session);
+				handshake = gnutls_handshake(currentry->session);
 				if (handshake == GNUTLS_E_AGAIN || handshake == GNUTLS_E_INTERRUPTED) {
 					continue;
 				}
 				else if (handshake < 0 ) {
 					//handshake failed, disconnect client
-					close(newsockfd);
-					free(newentry);
+					close(currentry->fd);
+					LIST_REMOVE(currentry, entries);
+					free(currentry);
+					
 					numClients = numClients - 1;
 
 					// TLS Handshake error handling
 					fprintf(stderr, "%s:%d Client Handshake failed: %d:%s\n", __FILE__, __LINE__, handshake, gnutls_strerror(handshake));
 					gnutls_datum_t out;
-					int type = gnutls_certificate_type_get(newentry->session);
-					unsigned status = gnutls_session_get_verify_cert_status(newentry->session);
+					int type = gnutls_certificate_type_get(currentry->session);
+					unsigned status = gnutls_session_get_verify_cert_status(currentry->session);
 					gnutls_certificate_verification_status_print(status, type, &out, 0);
 					fprintf(stderr, "cert verify output: %s\n", out.data);
 					gnutls_free(out.data);
@@ -274,7 +275,7 @@ int main(int argc, char **argv)
 				}
 				else { //successful handshake connection! add Client to list and begin communication
 					fprintf(stderr, "chat Server: Client Handshake completed!\n");
-					newentry->handshook = 1;
+					currentry->handshook = 1;
 					
 				}
 			}
