@@ -13,6 +13,8 @@ Acceptable Server Names: (Servers we have made certificates for)
 
 Chat servers can be made with any server name, but only the above names will have certificates, meaning that handshakes will only succeed between clients and chat servers with those names.
 
+IF THERE IS AN ISSUE WITH CERTIFICATES please regenerate them using the gen.sh executable in /openssl. This can be done by opening the openssl folder in a terminal and run ./gen.sh, then try to run the assignment again.
+
 A server registers with the directory by connecting and sending its topic name and port number.  Topic 
 names are limited to 18 characters (5 servers * 18 chars + ", " * (5-1) servers = 98 chars, 99 with 
 terminator).  Additionally, topic names cannot include ',' or ';' because of how they are used in 
