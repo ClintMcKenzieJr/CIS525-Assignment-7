@@ -234,6 +234,7 @@ int main(int argc, char **argv)
 		FD_ZERO(&readset);
 		FD_ZERO(&writeset);
 		FD_SET(sockfd, &readset);
+		FD_SET(dirsockfd, &readset);
 
 		maxsockfd = sockfd;
 
@@ -282,6 +283,12 @@ int main(int argc, char **argv)
 		
 
 		if ((i=select(maxsockfd+1, &readset, &writeset, NULL, NULL)) > 0) {
+			// If directory socket closes
+			if (FD_ISSET(dirsockfd, &readset)) {
+				// Anytime it is set, it must be closed
+				exit(1);
+			}
+			
 			/* Handle listening socket */
 			if (FD_ISSET(sockfd, &readset)) {
 				clilen = sizeof(cli_addr);
