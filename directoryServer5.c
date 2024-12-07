@@ -597,7 +597,7 @@ int main(int argc, char** argv) {
           close(newsockfd);
           free_client(&client);
           // TLS Handshake error handling
-          fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+          fprintf(stderr, "%s:%d Client Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
           gnutls_datum_t out;
           int type = gnutls_certificate_type_get(client.session);
           unsigned status = gnutls_session_get_verify_cert_status(client.session);
@@ -607,7 +607,7 @@ int main(int argc, char** argv) {
           continue;
         }
         else { //Successful TLS handshake
-          fprintf(stderr, "directory Server: Handshake completed!\n");
+          fprintf(stderr, "directory Server: Client Handshake completed!\n");
 
           // Need to expand the array
           if (clients_len >= clients_cap) {

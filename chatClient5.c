@@ -89,7 +89,7 @@ int main()
 	LOOP_CHECK(handshake, gnutls_handshake(session));
 	if (handshake < 0){
 		// TLS Handshake error handling
-		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		fprintf(stderr, "%s:%d Directory Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		gnutls_datum_t out;
 		int type = gnutls_certificate_type_get(session);
 		unsigned status = gnutls_session_get_verify_cert_status(session);
@@ -102,7 +102,7 @@ int main()
 		exit(1);
 	}
 	else {
-          fprintf(stderr, "chat client: Handshake completed!\n");
+          fprintf(stderr, "chat client: Directory Handshake completed!\n");
     }
 
 	// Request servers, wait to read, then wait for input, then write and wait to read
@@ -182,14 +182,14 @@ int main()
 	// TLS Handshake with chat Server
 	gnutls_transport_set_int(session, sockfd);
 	if ((handshake = gnutls_handshake(session)) < 0){
-		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		fprintf(stderr, "%s:%d Server Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		close(sockfd);
 		gnutls_global_deinit();
 		gnutls_certificate_free_credentials(x509_cred);
 		exit(1);
 	}
 	else {
-		fprintf(stderr, "chat client: Handshake completed!\n");
+		fprintf(stderr, "chat client: Server Handshake completed!\n");
 	}
 
 	for(;;) {

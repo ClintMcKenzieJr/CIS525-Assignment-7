@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 	LOOP_CHECK(handshake, gnutls_handshake(dSession));
 	if (handshake < 0){
 		// TLS Handshake error handling
-		fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+		fprintf(stderr, "%s:%d Directory Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
 		gnutls_datum_t out;
 		int type = gnutls_certificate_type_get(dSession);
 		unsigned status = gnutls_session_get_verify_cert_status(dSession);
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	else {
-          fprintf(stderr, "chat server: Handshake completed!\n");
+          fprintf(stderr, "chat server: Directory Handshake completed!\n");
     }
 
 	// Write topic and port to directory (and keep socket open so the directory knows
@@ -257,8 +257,8 @@ int main(int argc, char **argv)
 
 						
 						//gnuTLS session setup if user is verified 
-						if(!TLSflag){
-							if(gnutls_init(newentry->session, GNUTLS_SERVER) < 0){
+						if(TLSflag){
+							if(gnutls_init(&newentry->session, GNUTLS_SERVER) < 0){
 								perror("directoryServer -- TLS error: failed to initialize session");
 								close(newsockfd);
 								free(newentry);
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
 								free(newentry);
 
 								// TLS Handshake error handling
-								fprintf(stderr, "%s:%d Handshake failed: %s\n", __FILE__, __LINE__, gnutls_strerror(handshake));
+								fprintf(stderr, "%s:%d Client Handshake failed: %d:%s\n", __FILE__, __LINE__, handshake, gnutls_strerror(handshake));
 								gnutls_datum_t out;
 								int type = gnutls_certificate_type_get(newentry->session);
 								unsigned status = gnutls_session_get_verify_cert_status(newentry->session);
@@ -300,7 +300,7 @@ int main(int argc, char **argv)
 								continue;
 							}
 							else { //successful handshake connection! add Client to list and begin communication
-								fprintf(stderr, "chat Server: Handshake completed!\n");
+								fprintf(stderr, "chat Server: Client Handshake completed!\n");
 							}
 							
 						
