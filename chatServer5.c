@@ -456,12 +456,13 @@ int nonblockread(struct entry *e) {
 		}
 	}
 	else { //TLS read
-		nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr);
-		if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
-			return 0; // msg not fully received; shouldn't happen, but best to be safe
+		if ((nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr)) < 0) {
+			if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
+				return 0; // msg not fully received; shouldn't happen, but best to be safe
+			}
+			fprintf(stderr, "%s:%d TLS Error reading from client, client connection removed %d\n", __FILE__, __LINE__, errno);
+			return -1;
 		}
-		fprintf(stderr, "%s:%d TLS Error reading from client, client connection removed %d\n", __FILE__, __LINE__, errno);
-		return -1;
 	}
 	if (nread > 0) {
 		e->inptr += nread;
