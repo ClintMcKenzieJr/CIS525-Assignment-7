@@ -710,8 +710,6 @@ int main(int argc, char** argv) {
       clients_len--;
 
       memmove(dest, src, count);
-
-      i--;
     }
   }
 }
