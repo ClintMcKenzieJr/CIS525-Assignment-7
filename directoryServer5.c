@@ -366,7 +366,7 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
       client->tx_len += snprintf(
                                  client->tx + client->tx_len, 
                                  client->tx_cap - client->tx_len, 
-                                 "%s", topic_server->topic);
+                                 "%s\n", topic_server->topic);
     }
 
     // Reset client RX because we got a valid command
