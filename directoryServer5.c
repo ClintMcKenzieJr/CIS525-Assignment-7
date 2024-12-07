@@ -703,13 +703,14 @@ int main(int argc, char** argv) {
       //   [ X , X , X , 4 , 3 , 1 ] X : Final Array
       //
       size_t el_size = sizeof(client_t);
-      client_t* src = clients + (el_size * (i + 1));
-      client_t* dest = clients + (el_size * i);
+      char* src = (char*)clients + (el_size * (i + 1));
+      char* dest = (char*)clients + (el_size * i);
 
       size_t count = (clients_len - i - 1) * el_size;
       clients_len--;
 
       memmove(dest, src, count);
+      i--;
     }
   }
 }
