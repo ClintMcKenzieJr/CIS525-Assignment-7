@@ -377,7 +377,9 @@ int main(int argc, char **argv)
 						currentry->inptr = currentry->inBuffer;
 					} else if (j == -1) { //FIX -- close TLS here
 						// Close socket, free entry, remove from list
+						gnutls_bye(currentry->session, GNUTLS_SHUT_RDWR);
 						close(currentry->fd);
+						gnutls_deinit(currentry->session);
 						if (strncmp(currentry->name, "\0", MAXNAMELEN) != 0) {
 							snprintf(outmsg, MAX, "%s has left the chat", currentry->name);
 							setoutmsgs(&clilist, currentry, outmsg);
