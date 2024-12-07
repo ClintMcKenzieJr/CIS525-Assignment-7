@@ -612,13 +612,16 @@ int main(int argc, char** argv) {
           // Need to expand the array
           if (clients_len >= clients_cap) {
             clients_cap *= 2;
-            clients = reallocarray(clients, clients_cap, sizeof(client_t));
+
+            clients = realloc(clients, clients_cap * sizeof(client_t));
 
             assert(clients);
           }
 
+          DEBUG_MSG("len = %zu\n", clients_len);
           // Put the client into the array
-          clients[clients_len++] = client;
+          clients[clients_len] = client;
+          clients_len++;
         }
       }
 
@@ -700,14 +703,13 @@ int main(int argc, char** argv) {
       //   [ X , X , X , 4 , 3 , 1 ] X : Final Array
       //
       size_t el_size = sizeof(client_t);
-      client_t* src = clients + (el_size * (i + 1));
-      client_t* dest = clients + (el_size * i);
+      char* src = (char*)clients + (el_size * (i + 1));
+      char* dest = (char*)clients + (el_size * i);
 
       size_t count = (clients_len - i - 1) * el_size;
       clients_len--;
 
       memmove(dest, src, count);
-
       i--;
     }
   }
