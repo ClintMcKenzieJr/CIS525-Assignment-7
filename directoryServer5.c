@@ -388,6 +388,21 @@ void parse_client_msg(client_t* clients, size_t clients_len, client_t* client) {
       return;
     }
 
+    int server_count = 0;
+    for (int i = 0; i < clients_len; i++) {
+      client_t* tserv = &clients[i];
+
+      if (!tserv) continue;
+      if (!tserv->fd) continue;
+
+      if (tserv->kind == CON_SERVER) server_count++;      
+    }
+
+    if (server_count > MAX_SERVERS) {
+      disconnect_client(client);
+      return;
+    }
+
     client_t* topic_server = find_server_with_topic(clients, clients_len, topic, topic_len);
 
     // If we find a topic server with the same name, we disconnect the new one
