@@ -415,7 +415,7 @@ int main(int argc, char **argv)
 					}
 					else { //TLS write
 						if ((nwritten = gnutls_record_send(currentry->session, currentry->outptr, k)) < 0) {
-							if (errno != GNUTLS_E_INTERRUPTED && errno != GNUTLS_E_AGAIN) {
+							if (errno != EWOULDBLOCK && errno != GNUTLS_E_INTERRUPTED && errno != GNUTLS_E_AGAIN) {
 								perror("server: write error on client socket");
 								// Close socket, free entry, remove from list
 								//FIX --add TLS memory cleanup
@@ -457,10 +457,10 @@ int nonblockread(struct entry *e) {
 	}
 	else { //TLS read
 		nread = gnutls_record_recv(e->session, e->inptr, &e->inBuffer[MAX] - e->inptr);
-		if (errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
+		if (errno == EWOULDBLOCK || errno == GNUTLS_E_INTERRUPTED || errno == GNUTLS_E_AGAIN) {
 			return 0; // msg not fully received; shouldn't happen, but best to be safe
 		}
-		fprintf(stderr, "%s:%d Error reading from client, client connection removed\n", __FILE__, __LINE__);
+		fprintf(stderr, "%s:%d TLS Error reading from client, client connection removed %d\n", __FILE__, __LINE__, errno);
 		return -1;
 	}
 	if (nread > 0) {
